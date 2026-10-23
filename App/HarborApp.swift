@@ -1,0 +1,343 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  HarborApp.swift
+//  Harbor
+//
+//  Created by Maciek Bagiński on 28/07/2025.
+//  Updated by Aether Aurelia on 15/11/2025.
+//
+
+import AppKit
+import Carbon
+import OSLog
+import Sparkle
+import SwiftUI
+import HarborSettings
+import HarborUI
+import HarborWeb
+
+struct HarborApp: App {
+    @State private var windowRegistry: WindowRegistry
+    @State private var webViewCoordinator = WebViewCoordinator()
+    @State private var settingsManager: HarborSettingsService
+    @State private var keyboardShortcutManager = KeyboardShortcutManager()
+    @State private var aiConfigService: AIConfigService
+    @State private var mcpManager = MCPManager()
+    @State private var aiService: AIService
+    @State private var tabOrganizerManager = TabOrganizerManager()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    // TEMPORARY: BrowserManager will be phased out as a global singleton.
+    // Eventually each manager (TabsController, etc.) will be independent and injected via environment.
+    @StateObject private var browserManager: BrowserManager
+
+    init() {
+        let settings = HarborSettingsService()
+        EnvironmentValues.harborSettingsFallback = settings
+        _settingsManager = State(initialValue: settings)
+        let registry = WindowRegistry()
+        _windowRegistry = State(initialValue: registry)
+        _browserManager = StateObject(
+            wrappedValue: BrowserManager(settings: settings, windowRegistry: registry))
+        let config = AIConfigService()
+        _aiConfigService = State(initialValue: config)
+        _aiService = State(initialValue: AIService(configService: config))
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            TransitionView(showB: $settingsManager.didFinishOnboarding) {
+                OnboardingView()
+                    .ignoresSafeArea(.all)
+                    .background(BackgroundWindowModifier())
+                    .environment(\.harborSettings, settingsManager)
+                    .environment(settingsManager)
+                    .environmentObject(browserManager)
+                    .environment(browserManager.tabs)
+            } viewB: {
+                ContentView()
+                    .ignoresSafeArea(.all)
+                    .background(BackgroundWindowModifier())
+                    .environmentObject(browserManager)
+                    .environment(browserManager.tabs)
+                    .environment(windowRegistry)
+                    .environment(webViewCoordinator)
+                    .environment(\.harborSettings, settingsManager)
+                    .environment(settingsManager)
+                    .environment(\.tabActions, browserManager)
+                    .environment(keyboardShortcutManager)
+                    .environment(aiConfigService)
+                    .environment(mcpManager)
+                    .environment(aiService)
+                    .environment(tabOrganizerManager)
+                    .onAppear {
+                        setupApplicationLifecycle()
+                        setupAIServices()
+                    }
+                
+                
+            }
+
+        }
+        .windowStyle(.hiddenTitleBar)
+        .commands {
+            HarborCommands(
+                browserManager: browserManager,
+                windowRegistry: windowRegistry,
+                shortcutManager: keyboardShortcutManager,
+                tabOrganizerManager: tabOrganizerManager
+            )
+        }
+
+
+        // macOS 26 style sidebar settings window
+        Settings {
+            SettingsWindow()
+                .environmentObject(browserManager)
+                .environment(browserManager.tabs)
+                .environmentObject(browserManager.gradientColorManager)
+                .environment(\.harborSettings, settingsManager)
+                .environment(settingsManager)
+                .environment(\.tabActions, browserManager)
+                .environment(\.contentBlocker, browserManager.contentBlockerManager)
+                .environment(\.siteRouting, browserManager.siteRoutingManager)
+                .environment(keyboardShortcutManager)
+                .environment(aiConfigService)
+                .environment(mcpManager)
+                .environment(tabOrganizerManager)
+        }
+        // contentMinSize lets the window grow past the content's ideal size,
+        // which .contentSize pinned it to.
+        .windowResizability(.contentMinSize)
+    }
+
+    // MARK: - Application Lifecycle Setup
+
+    /// Wires AI services to runtime dependencies (BrowserManager, MCP, etc.)
+    private func setupAIServices() {
+        aiService.browserManager = browserManager
+        aiService.mcpManager = mcpManager
+
+        let toolExecutor = BrowserToolExecutor(browserManager: browserManager)
+        aiService.browserToolExecutor = toolExecutor
+
+        // Start enabled MCP servers
+        mcpManager.startEnabledServers(configs: aiConfigService.mcpServers)
+    }
+
+    /// Configures application-level dependencies and callbacks when the first window appears.
+    ///
+    /// This function sets up the following connections:
+    /// - AppDelegate ↔ BrowserManager: For app termination cleanup and Sparkle update integration
+    /// - WindowRegistry callbacks: Register, close, and activate window state
+    /// - Keyboard shortcut manager: Enable global keyboard shortcuts
+    ///
+    /// TEMPORARY CONNECTIONS (to be removed during refactoring):
+    /// - BrowserManager ← WebViewCoordinator: Currently BrowserManager holds a reference to coordinate web views
+    /// - BrowserManager ← WindowRegistry: Currently BrowserManager tracks active window state
+    ///
+    /// These temporary connections exist because BrowserManager is currently a god object.
+    /// Future refactoring will eliminate these by:
+    /// 1. Moving WebViewCoordinator ownership to per-window state
+    /// 2. Moving window management out of BrowserManager entirely
+    /// 3. Using pure environment-based dependency injection
+    private func setupApplicationLifecycle() {
+        // Connect AppDelegate for termination and updates
+        appDelegate.browserManager = browserManager
+        appDelegate.windowRegistry = windowRegistry
+        appDelegate.mcpManager = mcpManager
+        appDelegate.drainPendingURLs()
+        browserManager.appDelegate = appDelegate
+
+        // TEMPORARY: Wire coordinators to BrowserManager
+        // TODO: Remove these connections - coordinators should be independent
+        browserManager.webViewCoordinator = webViewCoordinator
+        browserManager.windowRegistry = windowRegistry
+        browserManager.harborSettings = settingsManager
+        // Rules written before spaces owned their data still name a profile.
+        browserManager.siteRoutingManager.dropMergedProfileTargets()
+        browserManager.aiService = aiService
+        browserManager.aiConfigService = aiConfigService
+
+        // Configure managers that depend on settings
+        browserManager.compositorManager.setMode(
+            settingsManager.tabManagementMode
+        )
+        browserManager.contentBlockerManager.setEnabled(
+            settingsManager.blockCrossSiteTracking || settingsManager.adBlockerEnabled
+        )
+
+        // Apply appearance mode
+        applyAppearanceMode(settingsManager.appearanceMode)
+        NotificationCenter.default.addObserver(
+            forName: .appearanceModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak settingsManager] _ in
+            guard let settings = settingsManager else { return }
+            applyAppearanceMode(settings.appearanceMode)
+        }
+
+        // Initialize keyboard shortcut manager
+        keyboardShortcutManager.setBrowserManager(browserManager)
+        browserManager.keyboardShortcutManager = keyboardShortcutManager
+        browserManager.mcpManager = mcpManager
+        browserManager.tabOrganizerManager = tabOrganizerManager
+        browserManager.tabs.onTabsPinned = { [weak browserManager, tabOrganizerManager, settingsManager] itemIDs in
+            guard settingsManager.autoRenamePinnedTabs, let tabs = browserManager?.tabs else { return }
+            tabOrganizerManager.autoRename(itemIDs, using: tabs)
+        }
+        DevMCPServer.shared.configure(browserManager: browserManager, enabled: settingsManager.developerModeEnabled && settingsManager.browserControlServerEnabled)
+        browserManager.tabs.setDeveloperMode(settingsManager.developerModeEnabled)
+        browserManager.installDevPickHandler()
+        browserManager.installAgentPageHost()
+
+        // A fresh install has no stored version and shows nothing.
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            if let seen = settingsManager.lastSeenVersion, seen != version {
+                browserManager.whatsNewVersion = version
+            }
+            settingsManager.lastSeenVersion = version
+        }
+
+        EscapeKey.onEscape = { [weak browserManager] in browserManager?.escapePressed(in: $0) }
+
+        // Set up window lifecycle callbacks
+        windowRegistry.onWindowRegister = { [weak browserManager] windowState in
+            browserManager?.setupWindowState(windowState)
+        }
+        // Retroactively set up any windows that registered before this callback was set
+        // (child .onAppear fires before parent .onAppear in SwiftUI)
+        for (_, windowState) in windowRegistry.windows {
+            browserManager.setupWindowState(windowState)
+        }
+
+        windowRegistry.onWindowClose = {
+            [webViewCoordinator, weak browserManager] windowId in
+            // Only cleanup if browserManager still exists (it's captured weakly)
+            if let browserManager = browserManager {
+                browserManager.sidebarPiPWindowClosing(windowId)
+                if browserManager.peekManager.windowId == windowId { browserManager.peekManager.dismissPeek() }
+                webViewCoordinator.cleanupWindow(windowId, tabs: browserManager.tabs)
+                if let windowState = browserManager.windowRegistry?.windows[windowId] {
+                    browserManager.tabs.detach(window: windowState)
+                }
+                browserManager.splitManager.cleanupWindow(windowId)
+
+                // Clean up incognito window if applicable
+                if let windowState = browserManager.windowRegistry?.windows[windowId],
+                   windowState.isIncognito {
+                    Task {
+                        await browserManager.closeIncognitoWindow(windowState)
+                    }
+                }
+            } else {
+                // BrowserManager was deallocated - perform minimal cleanup
+                // Remove compositor container view to prevent leaks
+                webViewCoordinator.removeCompositorContainerView(for: windowId)
+            }
+        }
+
+        windowRegistry.onActiveWindowChange = {
+            [weak browserManager] windowState in
+            browserManager?.setActiveWindowState(windowState)
+        }
+    }
+}
+
+// MARK: - Appearance Mode
+
+private func applyAppearanceMode(_ mode: AppearanceMode) {
+    switch mode {
+    case .system:
+        NSApp.appearance = nil  // Follow system
+    case .light:
+        NSApp.appearance = NSAppearance(named: .aqua)
+    case .dark:
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+    }
+}
+
+// MARK: - Window Configuration
+
+/// Configures the window appearance and behavior for Harbor browser windows
+///
+/// This modifier:
+/// - Hides the title bar text while keeping native traffic light buttons visible
+/// - Sets transparent background for custom window styling
+/// - Configures minimum window size
+/// - Enables full-size content view for edge-to-edge content
+struct BackgroundWindowModifier: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = FullScreenToolbarView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                // An empty unified toolbar is what puts the traffic lights where Apple's own
+                // apps have them (26pt in from the corner rather than 16). Nothing draws in it.
+                if window.toolbar == nil { window.toolbar = NSToolbar() }
+                window.toolbarStyle = .unified
+                window.titlebarAppearsTransparent = true
+                window.backgroundColor = .clear
+                window.titleVisibility = .hidden
+                window.isReleasedWhenClosed = false
+                // window.isMovableByWindowBackground = true // Disabled - use SwiftUI-based window drag system instead
+                window.isMovable = true
+                var mask: NSWindow.StyleMask = [
+                    .titled, .closable, .miniaturizable, .resizable,
+                    .fullSizeContentView,
+                ]
+                // Preserve fullScreen flag — removing it outside a transition crashes on macOS 15.5+
+                if window.styleMask.contains(.fullScreen) {
+                    mask.insert(.fullScreen)
+                }
+                window.styleMask = mask
+
+                // The toolbar makes the title band 66pt tall, most of it over the page.
+                TitlebarDragRegion.letAppKitViewsBlockDrags(in: window)
+                EscapeKey.route(in: window)
+
+                window.minSize = NSSize(width: 470, height: 382)
+                window.contentMinSize = NSSize(width: 470, height: 382)
+            }
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let window = nsView.window else { return }
+        // Only re-apply if somehow reset (e.g., view transition flash)
+        guard !window.titlebarAppearsTransparent else { return }
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+    }
+}
+
+/// Fullscreen keeps the empty toolbar as a white band, on screen or on hover at the top, so it is
+/// hidden for the stay. AppKit ignores a re-show until the exit has finished. The traffic lights
+/// across that exit are `TrafficLightsView`'s job in WindowView.swift.
+private final class FullScreenToolbarView: NSView {
+    private var observers: [any NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        guard let window else { return }
+        let center = NotificationCenter.default
+        observers = [
+            // Before entry, so the band AppKit builds for the hover reveal is the bare title bar.
+            // Weak: NotificationCenter holds these blocks, and a strong window here would keep
+            // every closed window alive.
+            center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak window] _ in
+                window?.toolbar?.isVisible = false
+            },
+            center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak window] _ in
+                window?.toolbar?.isVisible = true
+            },
+        ]
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+}
+

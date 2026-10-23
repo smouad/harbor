@@ -1,0 +1,85 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  Tweaks.swift
+//  Harbor
+//
+//  Created by Claude on 15/09/2026.
+//
+
+import SwiftUI
+import HarborDesign
+import HarborSettings
+
+/// Per-site tweaks: media downloads, Facebook, Reddit, YouTube and SponsorBlock.
+public struct SettingsTweaksTab: View {
+    @Environment(HarborSettingsService.self) var harborSettings
+    @State private var newSite = ""
+    @State private var showingAddSite = false
+
+    public init() {}
+
+    public var body: some View {
+        @Bindable var settings = harborSettings
+        Form {
+            // Same rows as Site Search in General.
+            Section {
+                ForEach(settings.mediaDownloadSites, id: \.self) { site in
+                    LabeledContent {
+                        Button {
+                            settings.mediaDownloadSites.removeAll { $0 == site }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                    } label: {
+                        Text(site)
+                    }
+                }
+
+                Button {
+                    showingAddSite = true
+                } label: {
+                    Label("Add Site", systemImage: "plus")
+                }
+            } header: {
+                Text("Download Button")
+            } footer: {
+                Text("Shows a download button on photos and videos, and saves the largest size the page offers to Downloads. Subdomains are included.")
+            }
+
+            Section {
+                Toggle("Hide Reels", isOn: $settings.facebookHideReels)
+                Toggle("Hide suggested posts", isOn: $settings.facebookHideSuggested)
+            } header: {
+                Text("Facebook")
+            } footer: {
+                Text("Hide Reels removes the Reels carousel from the news feed. Hide suggested posts removes posts from groups, pages, and people you don't follow, and People You May Know. Friends, followed pages, and groups stay.")
+            }
+
+            Section {
+                Toggle("Sort feeds by Hot", isOn: $settings.redditSortHot)
+            } header: {
+                Text("Reddit")
+            } footer: {
+                Text("Opens the home feed, subreddits and custom feeds sorted by Hot instead of Best. Choosing another sort still works.")
+            }
+
+            YouTubeSettingsSections()
+        }
+        .formStyle(.grouped)
+        .alert("Add Site", isPresented: $showingAddSite) {
+            TextField("Add a site (e.g. instagram.com)", text: $newSite)
+            Button("Add", action: add)
+                .disabled(SiteRoutingRule.normalizeDomain(newSite).isEmpty)
+            Button("Cancel", role: .cancel) { newSite = "" }
+        }
+    }
+
+    private func add() {
+        let domain = SiteRoutingRule.normalizeDomain(newSite)
+        guard !domain.isEmpty, !harborSettings.mediaDownloadSites.contains(domain) else { return }
+        harborSettings.mediaDownloadSites.append(domain)
+        newSite = ""
+    }
+}

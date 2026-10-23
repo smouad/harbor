@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="232 212 560 600" width="644" height="690">
+  <!-- Harbor mark: two pilings joined by a wave. One colour; the icon fills it. -->
+  <rect x="232" y="212" width="132" height="600" rx="66" fill="#000"/>
+  <rect x="660" y="212" width="132" height="600" rx="66" fill="#000"/>
+  <path d="M 298 512 H 364 C 401 512 401 466 438 466 C 512 466 512 558 586 558 C 623 558 623 512 660 512 H 726" fill="none" stroke="#000" stroke-width="100" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,252 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  HarborDesign.swift
+//  Harbor
+//
+//  Single source of truth for radii, spacing, sizes, type, motion,
+//  surfaces, and elevation. No literal radius, font size, shadow, or
+//  animation duration may appear in the UI layer outside this file.
+//
+
+import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
+
+public enum HarborDesign {
+
+    // MARK: - Radius (all continuous / squircle)
+
+    public enum Radius {
+        public static let xs: CGFloat = 4      // favicon
+        public static let sm: CGFloat = 6      // icon button, menu item, small chip
+        public static let md: CGFloat = 8      // tab row, nav button, URL bar
+        public static let lg: CGFloat = 12     // card, settings group
+        public static let tile: CGFloat = 10   // favorites tile
+        public static let xl: CGFloat = 16     // dialog, toast
+        public static let xxl: CGFloat = 24    // command palette
+        /// The page card. Info.plist's UIDesignRequiresCompatibility keeps the window's corner at the
+        /// classic ~9pt (macOS 26's own is ~24pt), and 8pt sits inside it the way Arc's card does.
+        public static let pageCard: CGFloat = 8
+
+        public static func shape(_ radius: CGFloat) -> RoundedRectangle {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+        }
+    }
+
+    // MARK: - Spacing
+
+    public enum Spacing {
+        public static let xxs: CGFloat = 2
+        public static let xs: CGFloat = 4
+        public static let sm: CGFloat = 6
+        public static let md: CGFloat = 8
+        public static let lg: CGFloat = 12
+        public static let xl: CGFloat = 16
+        public static let xxl: CGFloat = 20
+        public static let xxxl: CGFloat = 24
+
+        public static let sidebarInset: CGFloat = 8
+        public static let rowGap: CGFloat = 6
+        public static let sectionGap: CGFloat = 10
+        public static let tileGap: CGFloat = 8         // between favorites tiles, both directions; Arc's gap
+        public static let rowPadding: CGFloat = 8
+        #if os(iOS)
+        // Depth 5 at 20 would eat 100 of a 390pt phone row.
+        public static let folderIndent: CGFloat = 16
+        #else
+        public static let folderIndent: CGFloat = 20
+        #endif
+        public static let sidebarTop: CGFloat = 52     // the unified title band; the lights sit centred in it
+        public static let trafficLights: CGFloat = 88  // leading space the traffic lights take in the title row
+        public static let titleFade: CGFloat = 20      // trailing fade on long row titles
+    }
+
+    // MARK: - Size
+
+    public enum Size {
+        #if os(iOS)
+        public static let row: CGFloat = 44
+        #else
+        public static let row: CGFloat = 32
+        #endif
+        public static let iconButton: CGFloat = 28
+        public static let favicon: CGFloat = 16
+        public static let essentialsTile: CGFloat = 46  // Arc's favorite tile: four of them fit a 228pt sidebar
+        public static let essentialsFavicon: CGFloat = 20
+        public static let navRow: CGFloat = 28
+        #if os(iOS)
+        // The floating bar's control row. 50 clears the 44pt touch minimum with
+        // room for the field's own inset.
+        public static let bottomBar: CGFloat = 50
+        #else
+        public static let bottomBar: CGFloat = 40
+        #endif
+        public static let spaceIcon: CGFloat = 14      // switcher and header symbol
+        public static let rowGlyph: CGFloat = 13       // inline glyphs in a row: audio, lock, chevron
+        public static let rowButton: CGFloat = 20      // hover-only close/unload button in a row
+        public static let cornerButton: CGFloat = 14   // button tucked into a tile corner, kept off the tile's centre
+        public static let hairlineWidth: CGFloat = 1   // 1pt rule
+        public static let loadBar: CGFloat = 2         // page load progress along the top of Peek and the mini window
+        public static let waveAmplitude: CGFloat = 3   // peak of the separator's working wave
+        public static let waveLength: CGFloat = 56     // one full cycle of that wave
+        public static let dropTail: CGFloat = 100      // empty drop target height below the last row
+        public static let dialogMaxWidth: CGFloat = 500
+        public static let chromeControl: CGFloat = 34  // title row, URL bar and search field height
+        public static let pipSkip: CGFloat = 48        // PiP skip buttons, as in the system PiP window
+        public static let pipPlay: CGFloat = 64        // PiP play/pause, as in the system PiP window
+        public static let pipScrub: CGFloat = 4        // PiP scrubber track
+        // Narrowest sidebar: the lights (88), the history pill (110), the inset (8).
+        public static let sidebarMin: CGFloat = 206
+        public static let sidebarDefault: CGFloat = 228 // a new window's sidebar: Arc's, measured to the page's edge
+
+        // Settings
+        public static let settingsChip: CGFloat = 22           // tinted icon chip in the settings sidebar
+        public static let settingsIcon: CGFloat = 32           // icon tile in a settings list row
+        public static let statusDot: CGFloat = 8               // inline state dot in a settings row
+        public static let fieldNarrow: CGFloat = 100           // numeric field, inline progress bar
+        public static let textEditorHeight: CGFloat = 200      // multi-line editor, scrolling value box
+
+        // Sheet scale, smallest to largest
+        public static let sheetSmallWidth: CGFloat = 450       // single-record editor
+        public static let sheetSmallHeight: CGFloat = 360
+        public static let sheetMediumWidth: CGFloat = 600      // record detail
+        public static let sheetMediumHeight: CGFloat = 500
+        public static let sheetLargeWidth: CGFloat = 800       // data management browser
+        public static let sheetLargeHeight: CGFloat = 600
+    }
+
+    // MARK: - Type
+
+    public enum Font {
+        public static let hero = SwiftUI.Font.system(size: 48, weight: .semibold)        // empty-state glyphs only
+        public static let display = SwiftUI.Font.system(size: 28, weight: .semibold)     // empty-state titles
+        public static let titleLarge = SwiftUI.Font.system(size: 20, weight: .semibold)  // panel titles
+        public static let heading = SwiftUI.Font.system(size: 17, weight: .semibold)     // settings pane title, dialog title
+        public static let title = SwiftUI.Font.system(size: 15, weight: .semibold)       // palette input, toast title
+        public static let label = SwiftUI.Font.system(size: 13, weight: .semibold)       // space name, folder name
+        public static let body = SwiftUI.Font.system(size: 13, weight: .medium)          // tab title, menu item, settings row
+        public static let bodyRegular = SwiftUI.Font.system(size: 13, weight: .regular)  // paragraphs, descriptions
+        public static let secondary = SwiftUI.Font.system(size: 12, weight: .medium)     // URL bar, popup button
+        public static let caption = SwiftUI.Font.system(size: 11, weight: .medium)       // counts, shortcuts, subtitles
+        public static let captionStrong = SwiftUI.Font.system(size: 11, weight: .semibold) // section headers
+        public static let micro = SwiftUI.Font.system(size: 9, weight: .semibold)        // badges only
+        public static let welcomeTitle = SwiftUI.Font.system(size: 28, weight: .semibold) // onboarding headline, on its card
+        public static let welcomeBody = SwiftUI.Font.system(size: 15, weight: .regular)   // onboarding line under it
+    }
+
+    // MARK: - Motion
+
+    public enum Motion {
+        public static let quick = Animation.easeOut(duration: 0.12)      // hover, press
+        public static let standardDuration: TimeInterval = 0.22          // `standard`, for AppKit animations
+        public static let standard = Animation.smooth(duration: standardDuration)    // selection, reveal, fold
+        public static let settle = Animation.smooth(duration: 0.6)       // the separator wave rising and flattening
+        public static let wavePeriod: TimeInterval = 1.6                 // seconds for the wave to travel one cycle
+        public static let flight = Animation.easeIn(duration: 0.6)       // a download flying from the page to its button
+        public static let spring = Animation.snappy(duration: 0.3)      // palette, dialog, toast, drag reorder, gesture-tracked motion
+        public static let barMorph = Animation.spring(response: 0.42, dampingFraction: 0.86) // top bar tucking away and back
+    }
+
+    // MARK: - Surface
+
+    public enum Surface {
+        public static let fill = Color.primary.opacity(0.045)           // hover, idle tile
+        public static let fillPressed = Color.primary.opacity(0.08)
+        public static let tintOpacity: Double = 0.18                       // accent-tinted control: chosen chip, own chat message
+        public static let mediaScrim = Color.black.opacity(0.35)           // controls over video
+        public static let hairline = Color.primary.opacity(0.08)
+        public static let unloadedOpacity: Double = 0.55
+        public static let dropBorderIdle = Color.secondary.opacity(0.3)    // dashed empty-state drop target
+        public static let dropBorderActive = Color.primary.opacity(0.4)    // dashed drop target while dragging
+        /// Destructive action fill. Kept at the value the dialog buttons shipped with.
+        public static let danger = Color(hex: "#F60000")
+        public static let scrim = Color.black.opacity(0.4)                 // modal dimming behind a dialog
+        public static let privateTint = Color(red: 0.36, green: 0.22, blue: 0.62).opacity(0.38) // private window chrome
+        /// The neutral accent a private window's chrome uses in place of a space's. Keep in step
+        /// with `SpaceGradient.incognito`, which is the persisted form of the same color.
+        public static let incognitoAccent = Color(hex: "#8E8E93")
+        /// The Agent space's fixed identity, amber to magenta: its chrome, switcher icon, and the
+        /// frame around its pages. No space accent comes close, so it never reads as a user space.
+        public static let agentGradient = LinearGradient(
+            colors: [Color(hex: "#FFB000"), Color(hex: "#FF5A1F"), Color(hex: "#E5177E")],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+        public static let agentChromeOpacity: Double = 0.45   // over the sidebar's own background
+        public static let agentFrameWidth: CGFloat = 3        // frame around the Agent space's page
+        public static let grainOpacity: Double = 0.07         // film grain over the window chrome (HarborGrain)
+
+        #if os(macOS)
+        public static let windowBackground = Color(nsColor: .windowBackgroundColor)
+        public static let raised = Color(nsColor: .controlBackgroundColor) // active row, active tile
+        #else
+        public static let windowBackground = Color(uiColor: .systemBackground)
+        public static let raised = Color(uiColor: .secondarySystemBackground) // active row, active tile
+        #endif
+
+        /// Sidebar/window chrome fill: the space accent fading to the system window background.
+        /// The top stop is a tint, not the raw accent, so it reads as light/washed out for every
+        /// color. Inactive windows blend further toward that background, approximating the dimming
+        /// NSVisualEffectView.followsWindowActiveState used to give the old blur for free.
+        public static func containerGradient(accent: Color, isActive: Bool) -> LinearGradient {
+            let end = windowBackground
+            let topBlend = isActive ? 0.55 : 0.8
+            #if os(macOS)
+            // Blend per appearance: `blended` freezes `.windowBackgroundColor` to whatever
+            // appearance is current when the body runs, which flips the top light/dark.
+            let base = NSColor(accent)
+            let top = Color(nsColor: NSColor(name: nil) { appearance in
+                var color = base
+                appearance.performAsCurrentDrawingAppearance {
+                    color = base.blended(withFraction: topBlend, of: .windowBackgroundColor) ?? base
+                }
+                return color
+            })
+            #else
+            // ponytail: iOS not built yet; NSColor.blended(withFraction:of:) has no UIKit
+            // equivalent. Flat opacity tint stands in until an iOS window chrome exists.
+            let top = accent.opacity(1 - topBlend)
+            #endif
+            return LinearGradient(colors: [top, end], startPoint: .top, endPoint: .bottom)
+        }
+    }
+
+    // MARK: - Brand
+
+    /// Harbor's own colors, from the app icon. Onboarding only: the browser's chrome follows the space accent.
+    public enum Brand {
+        public static let navy = Color(hex: "#11446A")
+        public static let deepNavy = Color(hex: "#061726")
+        public static let foam = Color(hex: "#F6FBFD")
+        public static let seaFoam = Color(hex: "#9CD5E8")
+    }
+
+    // MARK: - Elevation
+
+    public enum Elevation {
+        case raised    // hairline + tight shadow: active row, tile, settings group
+        case floating  // menu, palette, toast, dialog, popover
+        case flat      // no shadow; for conditional elevation
+    }
+}
+
+// MARK: - View helpers
+
+private struct HarborElevationModifier: ViewModifier {
+    let level: HarborDesign.Elevation
+
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: .black.opacity(level == .floating ? 0.16 : 0), radius: level == .floating ? 32 : 0, y: level == .floating ? 12 : 0)
+            // Raised only. A 2pt shadow hugs the shape and reads as a dark stroke, which a
+            // floating card does not want: `harborFloatingSurface` draws its own hairline.
+            .shadow(color: .black.opacity(level == .raised ? 0.05 : 0), radius: level == .raised ? 2 : 0, y: level == .raised ? 1 : 0)
+    }
+}
+
+public extension View {
+    func harborElevation(_ level: HarborDesign.Elevation) -> some View {
+        modifier(HarborElevationModifier(level: level))
+    }
+}

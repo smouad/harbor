@@ -1,0 +1,32 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  InternalNativePortHandler.swift
+//  Harbor
+//
+//  Protocol for handling native messaging ports internally when no external
+//  host process is available. Safari extensions (.appex) expect the host app
+//  to respond on these channels.
+//
+
+import Foundation
+import WebKit
+
+/// A handler for native messaging commands received on a port.
+/// Implementations are extension-specific (e.g. Bitwarden biometric unlock).
+@MainActor
+protocol InternalNativePortHandler: AnyObject {
+    /// The native messaging application identifiers this handler supports.
+    /// e.g. ["com.8bit.bitwarden"] for Bitwarden biometric port.
+    static var applicationIdentifiers: [String] { get }
+
+    /// The installed extension IDs allowed to reach this handler. The application identifier
+    /// is chosen by the caller, so it says nothing about who is calling.
+    static var extensionIdentifiers: Set<String> { get }
+
+    /// Handle an incoming message on the port.
+    /// Return `true` if the message was handled, `false` to fall through to generic handling.
+    func handleMessage(
+        _ message: [String: Any],
+        port: WKWebExtension.MessagePort
+    ) -> Bool
+}

@@ -1,0 +1,147 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  ContentView.swift
+//  Harbor
+//
+//  Created by Maciek Bagiński on 28/07/2025.
+//  Updated by Aether Aurelia on 15/11/2025.
+//
+
+import SwiftUI
+import AppKit
+import HarborWeb
+
+struct ContentView: View {
+    @EnvironmentObject var browserManager: BrowserManager
+    @Environment(WindowRegistry.self) private var windowRegistry
+    @State private var defaultWindowState = BrowserWindowState()
+    @State private var commandPalette = CommandPalette()
+    
+    private let providedWindowState: BrowserWindowState?
+    
+    init(windowState: BrowserWindowState? = nil) {
+        self.providedWindowState = windowState
+    }
+    
+    private var windowState: BrowserWindowState {
+        providedWindowState ?? defaultWindowState
+    }
+
+    var body: some View {
+        WindowView()
+            .environment(windowState)
+            .environment(commandPalette)
+            .environmentObject(browserManager.gradientColorManager)
+            .background(WindowFocusBridge(windowState: windowState, windowRegistry: windowRegistry))
+            .frame(minWidth: 470, minHeight: 382)
+            .onAppear {
+                // Set CommandPalette reference for global shortcuts
+                windowState.commandPalette = commandPalette
+                // Register this window state with the registry
+                windowRegistry.register(windowState)
+            }
+            .onDisappear {
+                // Unregister this window state when the window closes
+                windowRegistry.unregister(windowState.id)
+            }
+    }
+}
+
+private struct WindowFocusBridge: NSViewRepresentable {
+    let windowState: BrowserWindowState
+    let windowRegistry: WindowRegistry
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(windowState: windowState, windowRegistry: windowRegistry)
+    }
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            context.coordinator.attach(to: view.window)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // Window is available at update time — call synchronously.
+        // The attach method guards against re-attachment to the same window.
+        context.coordinator.attach(to: nsView.window)
+    }
+    
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator: NSObject {
+        let windowState: BrowserWindowState
+        let windowRegistry: WindowRegistry
+        private weak var window: NSWindow?
+        private var keyObserver: Any?
+        private var closeObserver: Any?
+
+        init(windowState: BrowserWindowState, windowRegistry: WindowRegistry) {
+            self.windowState = windowState
+            self.windowRegistry = windowRegistry
+        }
+
+        func attach(to window: NSWindow?) {
+            guard self.window !== window else { return }
+            detach()
+            self.window = window
+            guard let window else { return }
+
+            // Store NSWindow reference on the window state so other systems
+            // (e.g. KeyboardShortcutManager) can identify browser windows
+            Task { @MainActor in
+                windowState.window = window
+            }
+
+            keyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.windowRegistry.setActive(self.windowState)
+                }
+            }
+
+            // onDisappear does not fire for windows Harbor creates itself (they outlive close),
+            // so a closed window would stay registered and reopen on the next launch.
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.windowRegistry.unregister(self.windowState.id)
+                }
+            }
+
+            if window.isKeyWindow {
+                Task { @MainActor in
+                    windowRegistry.setActive(windowState)
+                }
+            }
+        }
+
+        func detach() {
+            if let observer = keyObserver {
+                NotificationCenter.default.removeObserver(observer)
+                keyObserver = nil
+            }
+            if let observer = closeObserver {
+                NotificationCenter.default.removeObserver(observer)
+                closeObserver = nil
+            }
+            window = nil
+        }
+
+        deinit {
+            detach()
+        }
+    }
+}

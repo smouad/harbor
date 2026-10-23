@@ -1,0 +1,260 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  HarborButtonStyle.swift
+//  Harbor
+//
+//  Created by Aether Aurelia on 11/10/2025.
+//
+
+import SwiftUI
+import HarborDesign
+import Garnish
+import HarborUI
+
+struct HarborButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) var colorScheme
+    @Environment(\.isEnabled) var isEnabled
+    @EnvironmentObject var gradientColorManager: GradientColorManager
+
+    let variant: Variant
+    let shadowStyle: ShadowStyle
+    let role: ButtonRole?
+
+    @State private var isHovering: Bool = false
+
+    // MARK: - Constants
+
+    private let cornerRadius: CGFloat = HarborDesign.Radius.lg
+    private let verticalPadding: CGFloat = 12
+    private let horizontalPadding: CGFloat = 12
+
+    // Hover and press effects
+    private let hoverMixAmount: CGFloat = 0.2
+    private let pressedOffset: CGFloat = 2
+    private let hoverOffset: CGFloat = 0.5
+
+    // Highlight opacity values
+    private let highlightOpacityDefault: CGFloat = 0.1
+    private let highlightOpacityHover: CGFloat = 0.15
+    private let highlightOpacityPressed: CGFloat = 0.07
+
+    // Stroke widths
+    private let highlightStrokeWidth: CGFloat = 2
+
+    // Disabled state
+    private let disabledOpacity: CGFloat = 0.3
+
+    enum Variant {
+        case secondary  // Regular button
+        case primary    // Prominent button
+    }
+
+    enum ShadowStyle {
+        case none
+        case subtle
+        case prominent
+    }
+
+    // MARK: - Body
+
+    func makeBody(configuration: Configuration) -> some View {
+        ZStack {
+            // Calculate colors using Garnish for contrast
+            let baseColor = backgroundColor()
+            let contrastingShade = variant == .primary && role != .destructive
+                ? gradientColorManager.actionForeground ?? contrastingTextColor(for: baseColor)
+                : contrastingTextColor(for: baseColor)
+            let backgroundWithHover = baseColor.mix(with: contrastingShade, by: isHovering ? hoverMixAmount : 0)
+
+            // Main button label with background
+            configuration.label
+                .font(.body.weight(.semibold))
+                .foregroundStyle(contrastingShade)
+                .padding(.vertical, verticalPadding)
+                .padding(.horizontal, horizontalPadding)
+                .background(backgroundWithHover)
+                .clipShape(HarborDesign.Radius.shape(cornerRadius))
+        }
+        .compositingGroup()
+        .opacity(isEnabled ? 1.0 : disabledOpacity)
+        .animation(HarborDesign.Motion.quick, value: configuration.isPressed)
+        .animation(HarborDesign.Motion.quick, value: isHovering)
+        .onHoverTracking { hovering in
+            isHovering = hovering
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    /// Returns the contrasting text color for the given background
+    private func contrastingTextColor(for background: Color) -> Color {
+        Garnish.contrastingShade(
+            of: background,
+            targetRatio: 2,
+            direction: .preferLight,
+            blendStyle: .strong
+        ) ?? textColor
+    }
+
+    /// Returns the highlight opacity based on button state
+    private func highlightOpacity(isPressed: Bool) -> CGFloat {
+        if !isEnabled {
+            return 0
+        } else if isPressed {
+            return highlightOpacityPressed
+        } else if isHovering {
+            return highlightOpacityHover
+        } else {
+            return highlightOpacityDefault
+        }
+    }
+
+    /// Returns the vertical offset based on button state
+    private func verticalOffset(isPressed: Bool) -> CGFloat {
+        if isPressed {
+            return pressedOffset
+        } else if isHovering {
+            return hoverOffset
+        } else {
+            return 0
+        }
+    }
+
+    /// Returns the base background color based on variant and role
+    private func backgroundColor() -> Color {
+        // Destructive role overrides variant colors
+        if role == .destructive {
+            return Color.red
+        }
+
+        switch variant {
+        case .secondary:
+            // Neutral gray for secondary buttons
+            return Color.white.mix(with: .black, by: colorScheme == .dark ? 0.8 : 0.06).opacity(0.7)
+        case .primary:
+            // The space accent, or a neutral fill when the accent is grey
+            return gradientColorManager.actionColor
+        }
+    }
+
+    /// Fallback text color when Garnish contrast calculation fails
+    private var textColor: Color {
+        switch variant {
+        case .secondary:
+            return Color.primary
+        case .primary:
+            return Color.white
+        }
+    }
+}
+
+// MARK: - Scale Button Style
+
+struct ScaleButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.95
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .animation(
+                HarborDesign.Motion.quick,
+                value: configuration.isPressed
+            )
+    }
+}
+
+// MARK: - Convenience Extensions
+
+extension ButtonStyle where Self == HarborButtonStyle {
+    static var harborButton: HarborButtonStyle {
+        HarborButtonStyle(variant: .secondary, shadowStyle: .subtle, role: nil)
+    }
+
+    static func harborButton(role: ButtonRole?) -> HarborButtonStyle {
+        HarborButtonStyle(variant: .secondary, shadowStyle: .subtle, role: role)
+    }
+
+    static var harborButtonProminent: HarborButtonStyle {
+        HarborButtonStyle(variant: .primary, shadowStyle: .prominent, role: nil)
+    }
+
+    static func harborButtonProminent(role: ButtonRole?) -> HarborButtonStyle {
+        HarborButtonStyle(variant: .primary, shadowStyle: .prominent, role: role)
+    }
+}
+
+#Preview {
+    let colors = [Color.blue, Color.purple, Color.green, Color.orange, Color.pink, Color.red]
+
+    return ScrollView {
+        VStack(spacing: 40) {
+            ForEach(colors, id: \.self) { color in
+                ButtonPreviewSection(color: color)
+            }
+        }
+        .padding()
+    }
+    .frame(width: 390, height: 1000)
+}
+
+private struct ButtonPreviewSection: View {
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text(colorName)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            buttonStack
+        }
+        .padding()
+        .background(.background.opacity(0.5))
+        .clipShape(HarborDesign.Radius.shape(HarborDesign.Radius.lg))
+        .environmentObject(makeColorManager())
+    }
+
+    private var colorName: String {
+        color.description.capitalized
+    }
+
+    private func makeColorManager() -> GradientColorManager {
+        let manager = GradientColorManager()
+#if canImport(AppKit)
+        let hex = color.toHexString(includeAlpha: true) ?? "#FFFFFFFF"
+#else
+        let hex = "#FFFFFFFF"
+#endif
+        let n1 = GradientNode(colorHex: hex, location: 0.0)
+        let n2 = GradientNode(colorHex: hex, location: 1.0)
+        let gradient = SpaceGradient(angle: 45.0, nodes: [n1, n2], grain: 0.05, opacity: 1.0)
+        manager.setImmediate(gradient)
+        return manager
+    }
+
+    private var buttonStack: some View {
+        VStack(spacing: 20) {
+            Button("Create Space", systemImage: "plus") {
+            }
+            .buttonStyle(.harborButtonProminent)
+            .background(.red)
+
+            Button("Cancel") {
+            }
+            .buttonStyle(.harborButton)
+
+            Button("Delete", systemImage: "trash") {
+            }
+            .buttonStyle(.harborButton(role: .destructive))
+
+            Button("Erase Everything", systemImage: "flame") {
+            }
+            .buttonStyle(.harborButtonProminent(role: .destructive))
+
+            Button("Disabled") {
+            }
+            .buttonStyle(.harborButtonProminent)
+            .disabled(true)
+        }
+    }
+}

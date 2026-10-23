@@ -1,0 +1,106 @@
+// harbor_adblock.h
+// C ABI over brave/adblock-rust (MPL-2.0) built from Harbor/ThirdParty/AdblockRustFFI.
+//
+// THREAD SAFETY: an engine pointer is NOT thread-safe. adblock::Engine is Send
+// but not Sync (it holds a RefCell regex cache). The caller must serialize all
+// calls on a given engine (e.g. confine it to one actor/queue). Distinct
+// engines may be used from distinct threads concurrently.
+
+#ifndef HARBOR_ADBLOCK_H
+#define HARBOR_ADBLOCK_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/// Build an engine from a JSON array of
+/// {"rules": "<filter text>", "trusted": bool, "cosmetic_only": bool}.
+/// Per list because ParseOptions.permissions is applied at parse time, and it is
+/// what gates trusted-* scriptlets. cosmetic_only keeps cosmetic filters and
+/// $generichide only, which is all cosmetic lookup reads; matching is then empty.
+/// Returns NULL on failure. Free with harbor_adblock_engine_free.
+void *harbor_adblock_engine_from_lists(const char *json_utf8, size_t json_len);
+
+/// Install the scriptlet resource set: a JSON array of adblock::resources::Resource.
+/// Top-level scriptlets must be application/javascript and their names must end
+/// in ".js"; fn/javascript is dependency-only. Returns false if the JSON is bad.
+bool harbor_adblock_engine_use_resources(void *engine, const char *json_utf8, size_t json_len);
+
+/// Restore an engine from bytes produced by harbor_adblock_engine_serialize.
+/// Returns NULL on failure (corrupt data or version mismatch).
+void *harbor_adblock_engine_deserialize(const uint8_t *bytes, size_t len);
+
+/// Serialize an engine. Writes the byte count to *out_len. Returns NULL on
+/// failure. Free the buffer with harbor_adblock_buffer_free.
+uint8_t *harbor_adblock_engine_serialize(void *engine, size_t *out_len);
+
+/// Free a buffer returned by harbor_adblock_engine_serialize. NULL is a no-op.
+void harbor_adblock_buffer_free(uint8_t *bytes, size_t len);
+
+/// True if the request would be blocked (matched a block rule with no
+/// exception, or an $important rule). request_type is one of adblock-rust's
+/// strings: "script", "image", "stylesheet", "xmlhttprequest", "sub_frame",
+/// "main_frame", "font", "media", "websocket", "ping", "object", "other".
+/// Returns false on NULL engine, NULL/non-UTF-8 arguments or unparseable URLs.
+bool harbor_adblock_engine_matches(void *engine, const char *url, const char *source_url, const char *request_type);
+
+/// Free an engine. NULL is a no-op.
+void harbor_adblock_engine_free(void *engine);
+
+/// Convert ABP/uBlock filter text (UTF-8, not NUL-terminated) into a
+/// NUL-terminated UTF-8 JSON array of WKContentRuleList rule objects.
+///
+/// Writes the converted rule count to *out_rule_count, the number of lines
+/// skipped because they cancel another rule to *out_skipped_count, and the
+/// number with no Safari equivalent to *out_unconverted_count. Any may be NULL.
+///
+/// "Unconverted" is not "lost": procedural cosmetic filters are answered by
+/// harbor_adblock_cosmetic_for_url at page load, and $removeparam is handled by
+/// TrackingParamStripper on the Swift side.
+///
+/// Returns NULL on a NULL or non-UTF-8 input.
+/// Free the result with harbor_adblock_string_free.
+char *harbor_adblock_convert_to_content_blocking(const char *rules_utf8, size_t rules_len, size_t *out_rule_count, size_t *out_skipped_count, size_t *out_unconverted_count);
+
+/// Free a string returned by any char*-returning function in this library.
+/// NULL is a no-op.
+void harbor_adblock_string_free(char *s);
+
+/// Cosmetic rules that apply to one URL, as a NUL-terminated UTF-8 JSON object
+/// with keys hide_selectors (array of string), procedural_actions (array of
+/// string, each itself a JSON object), injected_script (string), exceptions
+/// (array of string) and generichide (bool).
+/// Returns NULL when nothing applies, or on a NULL/non-UTF-8 argument.
+///
+/// `engine` must come from harbor_adblock_engine_from_lists. The same thread
+/// safety rule applies as for matching: serialize all calls on a given engine.
+///
+/// injected_script is empty unless the engine was given scriptlet
+/// resources, and Harbor gives it none.
+///
+/// Free the result with harbor_adblock_string_free.
+char *harbor_adblock_cosmetic_for_url(void *engine, const char *url);
+
+/// uBlock Origin `urlskip=` rules from filter text (UTF-8, not NUL-terminated).
+/// Only lines containing "urlskip=" are read. Writes the number of usable rules
+/// to *out_rule_count (may be NULL). Returns NULL on a NULL or non-UTF-8 input.
+/// Free with harbor_adblock_urlskip_free. Serialize all calls on one skipper.
+void *harbor_adblock_urlskip_new(const char *rules_utf8, size_t rules_len, size_t *out_rule_count);
+
+/// The URL a top-level navigation to `url` from a page at `source_url` should
+/// load instead, when a urlskip rule names `url` as a redirector. NULL otherwise.
+/// Free the result with harbor_adblock_string_free.
+char *harbor_adblock_urlskip_target(void *skipper, const char *url, const char *source_url);
+
+/// NULL is a no-op.
+void harbor_adblock_urlskip_free(void *skipper);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* HARBOR_ADBLOCK_H */

@@ -1,0 +1,54 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  CopyURLToast.swift
+//  Harbor
+//
+//  Created on 2025-01-XX.
+//
+
+import SwiftUI
+import HarborDesign
+import HarborWeb
+
+public struct CopyURLToast: View {
+    @Environment(BrowserWindowState.self) private var windowState
+
+    private let title: String
+
+    public init(title: String? = nil) {
+        self.title = title ?? "Copied Current URL"
+    }
+
+    public var body: some View {
+        ToastView {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(HarborDesign.Font.secondary)
+                    .foregroundStyle(.primary)
+                    .frame(width: 14, height: 14)
+                    .padding(4)
+                    .background(HarborDesign.Surface.fill)
+                    .clipShape(HarborDesign.Radius.shape(HarborDesign.Radius.sm))
+                    .overlay {
+                        HarborDesign.Radius.shape(HarborDesign.Radius.sm)
+                            .stroke(HarborDesign.Surface.hairline, lineWidth: 1)
+                    }
+
+                Text(title)
+                    .font(HarborDesign.Font.secondary)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .transition(.toast)
+        .onAppear {
+            // Auto-dismiss after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                windowState.isShowingCopyURLToast = false
+            }
+        }
+        .onTapGesture {
+            windowState.isShowingCopyURLToast = false
+        }
+    }
+}
+

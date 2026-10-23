@@ -1,0 +1,809 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2C16A0262E87430B0070894B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2C16A0252E87430B0070894B /* Sparkle */; };
+		3600212C2EC6EADB0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		3600212E2EC6EADB0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		360021302EC6EADB0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		360021332EC6EAEB0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		360021392EC6EC2F0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		3600213C2EC6EC450016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		3600213F2EC6EC710016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		360021422EC6EC7F0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		360021442EC6EC7F0016A41E /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		564997D82E9B24CC00D89F78 /* Garnish in Frameworks */ = {isa = PBXBuildFile; productRef = 564997D72E9B24CC00D89F78 /* Garnish */; };
+		7FAFC5DA2E3ADDCD009D7DC4 /* FaviconFinder in Frameworks */ = {isa = PBXBuildFile; productRef = 7FAFC5D92E3ADDCD009D7DC4 /* FaviconFinder */; };
+		C0DE7AB50000000000000003 /* HarborTabsCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000002 /* HarborTabsCore */; };
+		C0DE7AB50000000000000013 /* HarborSettings in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000012 /* HarborSettings */; };
+		C0DE7AB50000000000000023 /* HarborDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000022 /* HarborDesign */; };
+		C0DE7AB50000000000000033 /* HarborBlocker in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000032 /* HarborBlocker */; };
+		C0DE7AB50000000000000043 /* HarborTweaks in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000042 /* HarborTweaks */; };
+		C0DE7AB50000000000000053 /* HarborWeb in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000052 /* HarborWeb */; };
+		C0DE7AB50000000000000063 /* HarborUI in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE7AB50000000000000062 /* HarborUI */; };
+		105000000000000000000200 /* HarborTabsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000100 /* HarborTabsCore */; };
+		105000000000000000000201 /* HarborSettings in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000101 /* HarborSettings */; };
+		105000000000000000000202 /* HarborDesign in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000102 /* HarborDesign */; };
+		105000000000000000000203 /* HarborBlocker in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000103 /* HarborBlocker */; };
+		105000000000000000000204 /* HarborTweaks in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000104 /* HarborTweaks */; };
+		105000000000000000000205 /* HarborWeb in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000105 /* HarborWeb */; };
+		105000000000000000000206 /* HarborUI in Frameworks */ = {isa = PBXBuildFile; productRef = 105000000000000000000106 /* HarborUI */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		7F8340FC2E37F39400674A5D /* Harbor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Harbor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		105000000000000000000009 /* HarboriOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HarboriOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2CAC4DD12E82457B00870189 /* Exceptions for "Harbor" folder in "Harbor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				ThirdParty/AdblockRustFFI/Cargo.lock,
+				ThirdParty/AdblockRustFFI/Cargo.toml,
+				ThirdParty/AdblockRustFFI/README.md,
+				ThirdParty/AdblockRustFFI/build.sh,
+				ThirdParty/AdblockRustFFI/include/harbor_adblock.h,
+				ThirdParty/AdblockRustFFI/include/module.modulemap,
+				ThirdParty/AdblockRustFFI/HarborAdblock.xcframework,
+				ThirdParty/AdblockRustFFI/src/content_blocking_ffi.rs,
+				ThirdParty/AdblockRustFFI/src/cosmetic_ffi.rs,
+				ThirdParty/AdblockRustFFI/src/lib.rs,
+				ThirdParty/AdblockRustFFI/tests/no_overbroad_rules.rs,
+				ThirdParty/BigUIPaging/README.md,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Harbor */;
+		};
+		2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Harbor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"CommandPalette Accessories/GenericSuggestionItem.swift",
+				"CommandPalette Accessories/HistorySuggestionItem.swift",
+				"CommandPalette Accessories/TabSuggestionItem.swift",
+				CommandPalette.swift,
+				CommandPaletteView.swift,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Harbor */;
+		};
+		2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Harbor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Sidebar/SidebarBottomBar.swift,
+				Sidebar/SidebarHeader.swift,
+				Sidebar/SpacesSideBarView.swift,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Harbor */;
+		};
+		105000000000000000000010 /* Exceptions for "HarboriOS" folder in "HarboriOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 105000000000000000000001 /* HarboriOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		2CAC4D282E82457B00870189 /* Harbor */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2CAC4DD12E82457B00870189 /* Exceptions for "Harbor" folder in "Harbor" target */,
+			);
+			path = Harbor;
+			sourceTree = "<group>";
+		};
+		2D0834B32EC8C43B00C302AC /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
+		2D0834BE2EC8CE0C00C302AC /* CommandPalette */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Harbor" target */,
+			);
+			path = CommandPalette;
+			sourceTree = "<group>";
+		};
+		2D0834C72EC8D90400C302AC /* Settings */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		2D0834CF2EC8E0AD00C302AC /* Navigation */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Harbor" target */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
+		564997D02E9B125200D89F78 /* UI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = UI;
+			sourceTree = "<group>";
+		};
+		7F6409912F4729B600A02697 /* Onboarding */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		105000000000000000000002 /* HarboriOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				105000000000000000000010 /* Exceptions for "HarboriOS" folder in "HarboriOS" target */,
+			);
+			path = HarboriOS;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7F8340F92E37F39400674A5D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				360021442EC6EC7F0016A41E /* (null) in Frameworks */,
+				3600213C2EC6EC450016A41E /* (null) in Frameworks */,
+				3600213F2EC6EC710016A41E /* (null) in Frameworks */,
+				564997D82E9B24CC00D89F78 /* Garnish in Frameworks */,
+				7FAFC5DA2E3ADDCD009D7DC4 /* FaviconFinder in Frameworks */,
+				360021302EC6EADB0016A41E /* (null) in Frameworks */,
+				360021392EC6EC2F0016A41E /* (null) in Frameworks */,
+				2C16A0262E87430B0070894B /* Sparkle in Frameworks */,
+				360021422EC6EC7F0016A41E /* (null) in Frameworks */,
+				3600212C2EC6EADB0016A41E /* (null) in Frameworks */,
+				3600212E2EC6EADB0016A41E /* (null) in Frameworks */,
+				360021332EC6EAEB0016A41E /* (null) in Frameworks */,
+				C0DE7AB50000000000000003 /* HarborTabsCore in Frameworks */,
+				C0DE7AB50000000000000013 /* HarborSettings in Frameworks */,
+				C0DE7AB50000000000000023 /* HarborDesign in Frameworks */,
+				C0DE7AB50000000000000033 /* HarborBlocker in Frameworks */,
+				C0DE7AB50000000000000043 /* HarborTweaks in Frameworks */,
+				C0DE7AB50000000000000053 /* HarborWeb in Frameworks */,
+				C0DE7AB50000000000000063 /* HarborUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				105000000000000000000200 /* HarborTabsCore in Frameworks */,
+				105000000000000000000201 /* HarborSettings in Frameworks */,
+				105000000000000000000202 /* HarborDesign in Frameworks */,
+				105000000000000000000203 /* HarborBlocker in Frameworks */,
+				105000000000000000000204 /* HarborTweaks in Frameworks */,
+				105000000000000000000205 /* HarborWeb in Frameworks */,
+				105000000000000000000206 /* HarborUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7F8340F32E37F39400674A5D = {
+			isa = PBXGroup;
+			children = (
+				105000000000000000000002 /* HarboriOS */,
+				7F6409912F4729B600A02697 /* Onboarding */,
+				2D0834C72EC8D90400C302AC /* Settings */,
+				2D0834CF2EC8E0AD00C302AC /* Navigation */,
+				2D0834BE2EC8CE0C00C302AC /* CommandPalette */,
+				7F8340FD2E37F39400674A5D /* Products */,
+				564997D02E9B125200D89F78 /* UI */,
+				2CAC4D282E82457B00870189 /* Harbor */,
+				2D0834B32EC8C43B00C302AC /* App */,
+			);
+			sourceTree = "<group>";
+		};
+		7F8340FD2E37F39400674A5D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				105000000000000000000009 /* HarboriOS.app */,
+				7F8340FC2E37F39400674A5D /* Harbor.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7F8340FB2E37F39400674A5D /* Harbor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Harbor" */;
+			buildPhases = (
+				7F8340F82E37F39400674A5D /* Sources */,
+				7F8340F92E37F39400674A5D /* Frameworks */,
+				7F8340FA2E37F39400674A5D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2CAC4D282E82457B00870189 /* Harbor */,
+				2D0834B32EC8C43B00C302AC /* App */,
+				2D0834C72EC8D90400C302AC /* Settings */,
+				564997D02E9B125200D89F78 /* UI */,
+				7F6409912F4729B600A02697 /* Onboarding */,
+			);
+			name = Harbor;
+			packageProductDependencies = (
+				7FAFC5D92E3ADDCD009D7DC4 /* FaviconFinder */,
+				2C16A0252E87430B0070894B /* Sparkle */,
+				564997D72E9B24CC00D89F78 /* Garnish */,
+				C0DE7AB50000000000000002 /* HarborTabsCore */,
+				C0DE7AB50000000000000012 /* HarborSettings */,
+				C0DE7AB50000000000000022 /* HarborDesign */,
+				C0DE7AB50000000000000032 /* HarborBlocker */,
+				C0DE7AB50000000000000042 /* HarborTweaks */,
+				C0DE7AB50000000000000052 /* HarborWeb */,
+				C0DE7AB50000000000000062 /* HarborUI */,
+			);
+			productName = Pulse;
+			productReference = 7F8340FC2E37F39400674A5D /* Harbor.app */;
+			productType = "com.apple.product-type.application";
+		};
+		105000000000000000000001 /* HarboriOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 105000000000000000000006 /* Build configuration list for PBXNativeTarget "HarboriOS" */;
+			buildPhases = (
+				105000000000000000000003 /* Sources */,
+				105000000000000000000004 /* Frameworks */,
+				105000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				105000000000000000000002 /* HarboriOS */,
+			);
+			name = HarboriOS;
+			packageProductDependencies = (
+				105000000000000000000100 /* HarborTabsCore */,
+				105000000000000000000101 /* HarborSettings */,
+				105000000000000000000102 /* HarborDesign */,
+				105000000000000000000103 /* HarborBlocker */,
+				105000000000000000000104 /* HarborTweaks */,
+				105000000000000000000105 /* HarborWeb */,
+				105000000000000000000106 /* HarborUI */,
+			);
+			productName = HarboriOS;
+			productReference = 105000000000000000000009 /* HarboriOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7F8340F42E37F39400674A5D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					7F8340FB2E37F39400674A5D = {
+						CreatedOnToolsVersion = 16.4;
+					};
+				};
+			};
+			buildConfigurationList = 7F8340F72E37F39400674A5D /* Build configuration list for PBXProject "Harbor" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7F8340F32E37F39400674A5D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7FAFC5D82E3ADDCD009D7DC4 /* XCRemoteSwiftPackageReference "FaviconFinder" */,
+				2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */,
+				564997D62E9B24CC00D89F78 /* XCRemoteSwiftPackageReference "Garnish" */,
+				C0DE7AB50000000000000001 /* XCLocalSwiftPackageReference "Packages/HarborTabsCore" */,
+				C0DE7AB50000000000000011 /* XCLocalSwiftPackageReference "Packages/HarborSettings" */,
+				C0DE7AB50000000000000021 /* XCLocalSwiftPackageReference "Packages/HarborDesign" */,
+				C0DE7AB50000000000000031 /* XCLocalSwiftPackageReference "Packages/HarborBlocker" */,
+				C0DE7AB50000000000000041 /* XCLocalSwiftPackageReference "Packages/HarborTweaks" */,
+				C0DE7AB50000000000000051 /* XCLocalSwiftPackageReference "Packages/HarborWeb" */,
+				C0DE7AB50000000000000061 /* XCLocalSwiftPackageReference "Packages/HarborUI" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7F8340FB2E37F39400674A5D /* Harbor */,
+				105000000000000000000001 /* HarboriOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7F8340FA2E37F39400674A5D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7F8340F82E37F39400674A5D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		7F8341062E37F39500674A5D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		7F8341072E37F39500674A5D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				CLANG_COVERAGE_MAPPING = NO;
+				ENABLE_CODE_COVERAGE = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		7F8341092E37F39500674A5D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_COVERAGE_MAPPING = NO;
+				ENABLE_CODE_COVERAGE = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "logo-dev";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Harbor/Harbor.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Harbor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mouad.harbor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = YES;
+				RUNTIME_EXCEPTION_ALLOW_JIT = YES;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = YES;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		7F83410A2E37F39500674A5D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = logo;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Harbor/Harbor.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Harbor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mouad.harbor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		105000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_COVERAGE_MAPPING = NO;
+				ENABLE_CODE_COVERAGE = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = logo;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HarboriOS/HarboriOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HarboriOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mouad.harbor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		105000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = logo;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HarboriOS/HarboriOS.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HarboriOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mouad.harbor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7F8340F72E37F39400674A5D /* Build configuration list for PBXProject "Harbor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F8341062E37F39500674A5D /* Debug */,
+				7F8341072E37F39500674A5D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Harbor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F8341092E37F39500674A5D /* Debug */,
+				7F83410A2E37F39500674A5D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		105000000000000000000006 /* Build configuration list for PBXNativeTarget "HarboriOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				105000000000000000000007 /* Debug */,
+				105000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C0DE7AB50000000000000001 /* XCLocalSwiftPackageReference "Packages/HarborTabsCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborTabsCore;
+		};
+		C0DE7AB50000000000000011 /* XCLocalSwiftPackageReference "Packages/HarborSettings" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborSettings;
+		};
+		C0DE7AB50000000000000021 /* XCLocalSwiftPackageReference "Packages/HarborDesign" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborDesign;
+		};
+		C0DE7AB50000000000000031 /* XCLocalSwiftPackageReference "Packages/HarborBlocker" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborBlocker;
+		};
+		C0DE7AB50000000000000041 /* XCLocalSwiftPackageReference "Packages/HarborTweaks" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborTweaks;
+		};
+		C0DE7AB50000000000000051 /* XCLocalSwiftPackageReference "Packages/HarborWeb" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborWeb;
+		};
+		C0DE7AB50000000000000061 /* XCLocalSwiftPackageReference "Packages/HarborUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HarborUI;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.0;
+			};
+		};
+		564997D62E9B24CC00D89F78 /* XCRemoteSwiftPackageReference "Garnish" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Aeastr/Garnish";
+			requirement = {
+				kind = revision;
+				revision = ffbd0091ed25eb3e250ca47b5ccc8c4f9a6a3420;
+			};
+		};
+		7FAFC5D82E3ADDCD009D7DC4 /* XCRemoteSwiftPackageReference "FaviconFinder" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/will-lumley/FaviconFinder";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.1.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2C16A0252E87430B0070894B /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		564997D72E9B24CC00D89F78 /* Garnish */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 564997D62E9B24CC00D89F78 /* XCRemoteSwiftPackageReference "Garnish" */;
+			productName = Garnish;
+		};
+		7FAFC5D92E3ADDCD009D7DC4 /* FaviconFinder */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7FAFC5D82E3ADDCD009D7DC4 /* XCRemoteSwiftPackageReference "FaviconFinder" */;
+			productName = FaviconFinder;
+		};
+		C0DE7AB50000000000000002 /* HarborTabsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborTabsCore;
+		};
+		C0DE7AB50000000000000012 /* HarborSettings */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborSettings;
+		};
+		C0DE7AB50000000000000022 /* HarborDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborDesign;
+		};
+		C0DE7AB50000000000000032 /* HarborBlocker */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborBlocker;
+		};
+		C0DE7AB50000000000000042 /* HarborTweaks */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborTweaks;
+		};
+		C0DE7AB50000000000000052 /* HarborWeb */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborWeb;
+		};
+		C0DE7AB50000000000000062 /* HarborUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborUI;
+		};
+		105000000000000000000100 /* HarborTabsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborTabsCore;
+		};
+		105000000000000000000101 /* HarborSettings */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborSettings;
+		};
+		105000000000000000000102 /* HarborDesign */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborDesign;
+		};
+		105000000000000000000103 /* HarborBlocker */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborBlocker;
+		};
+		105000000000000000000104 /* HarborTweaks */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborTweaks;
+		};
+		105000000000000000000105 /* HarborWeb */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborWeb;
+		};
+		105000000000000000000106 /* HarborUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarborUI;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7F8340F42E37F39400674A5D /* Project object */;
+}

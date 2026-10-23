@@ -1,0 +1,136 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  Spaces.swift
+//  Harbor
+//
+//  Spaces settings. A space is a login context: it owns its cookies and site data, so this is
+//  also where that data is inspected and cleared.
+//
+
+import HarborTabsCore
+import SwiftUI
+import HarborDesign
+import HarborWeb
+
+public struct SpacesSettingsView: View {
+    @Environment(TabsController.self) private var tabs
+    @Environment(\.tabActions) private var actions
+
+    /// Cookie and record counts per space, filled in as each store answers.
+    @State private var stats: [UUID: String] = [:]
+    @State private var showAccentPickerFor: UUID?
+
+    public init() {}
+
+    private var spaces: [SpaceRecord] { tabs.orderedSpaces.filter { !$0.isAgent } }
+
+    public var body: some View {
+        Form {
+            Section {
+                // The Agent space keeps its look and borrows another space's data, so it has no row.
+                ForEach(spaces) { space in
+                    row(space)
+                }
+            } header: {
+                Text("Spaces")
+            } footer: {
+                Text("Each space keeps its own cookies and logins. Sites you sign into in one space stay signed out in the others.")
+            }
+
+            Section {
+                Button("New Space…", systemImage: "plus", action: showCreateDialog)
+            }
+        }
+        .formStyle(.grouped)
+        .task(id: tabs.orderedSpaces.count) { await refreshStats() }
+    }
+
+    @ViewBuilder
+    private func row(_ space: SpaceRecord) -> some View {
+        HStack(spacing: HarborDesign.Spacing.md) {
+            Button {
+                showAccentPickerFor = space.id
+            } label: {
+                Circle()
+                    .fill(space.accentColor)
+                    .frame(width: HarborDesign.Size.iconButton, height: HarborDesign.Size.iconButton)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: Binding(
+                get: { showAccentPickerFor == space.id },
+                set: { if !$0 { showAccentPickerFor = nil } }
+            )) {
+                SpaceAccentPicker(selectedHex: Binding(
+                    get: { space.accentHex },
+                    set: { tabs.updateSpace(space.id, name: nil, icon: nil, accentHex: $0) }
+                ))
+                .padding(HarborDesign.Spacing.lg)
+            }
+
+            VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                TextField("Space name", text: Binding(
+                    get: { space.name },
+                    set: { tabs.updateSpace(space.id, name: $0, icon: nil, accentHex: nil) }
+                ))
+                .textFieldStyle(.plain)
+                Text(stats[space.id] ?? "Checking…")
+                    .font(HarborDesign.Font.secondary)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Menu {
+                Button("Clear Website Data", systemImage: "trash") {
+                    Task { await clearData(space) }
+                }
+                if spaces.count > 1 {
+                    Divider()
+                    Button("Delete Space…", systemImage: "trash", role: .destructive) {
+                        showDeleteDialog(space)
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    // MARK: - Data
+
+    private func refreshStats() async {
+        for space in spaces {
+            guard let profile = tabs.profile(forSpace: space.id) else { continue }
+            await profile.refreshDataStoreStats()
+            stats[space.id] = profile.estimatedDataSize
+        }
+    }
+
+    private func clearData(_ space: SpaceRecord) async {
+        guard let profile = tabs.profile(forSpace: space.id) else { return }
+        await profile.clearAllData()
+        stats[space.id] = profile.estimatedDataSize
+    }
+
+    // MARK: - Dialogs
+
+    private func showCreateDialog() {
+        actions?.presentSpaceCreation { name, accentHex in
+            tabs.createSpace(
+                name: name.isEmpty ? "New Space" : name,
+                icon: "square.grid.2x2",
+                accentHex: accentHex,
+                after: tabs.orderedSpaces.last?.id
+            )
+        }
+    }
+
+    private func showDeleteDialog(_ space: SpaceRecord) {
+        actions?.confirmSpaceDeletion(
+            spaceName: space.name,
+            tabCount: tabs.tabCount(inSpace: space.id),
+            isLastSpace: spaces.count <= 1,
+            onDelete: { tabs.deleteSpace(space.id) }
+        )
+    }
+}

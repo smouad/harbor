@@ -1,0 +1,77 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  ToolExecutionGlowView.swift
+//  Harbor
+//
+//  Animated gradient glow effect during AI tool execution
+//
+
+import SwiftUI
+import HarborDesign
+
+struct ToolExecutionGlowView: View {
+    @State private var rotation1: Double = 0
+    @State private var rotation2: Double = 0
+    @State private var rotation3: Double = 0
+
+    private let colors: [Color] = [
+        Color(hex: "BC82F3"),
+        Color(hex: "C686FF"),
+        Color(hex: "8D9FFF"),
+        Color(hex: "F5B9EA"),
+        Color(hex: "FF6778"),
+        Color(hex: "FFBA71"),
+        Color(hex: "BC82F3"),
+    ]
+
+    // continuous motion, not a state transition
+    private let rotation1Duration: Double = 2
+    private let rotation2Duration: Double = 2.5
+    private let rotation3Duration: Double = 3
+
+    var body: some View {
+        let cornerRadius: CGFloat = HarborDesign.Radius.lg
+
+        ZStack {
+            // Layer 1 — tight, sharp glow
+            HarborDesign.Radius.shape(cornerRadius)
+                .stroke(
+                    AngularGradient(colors: colors, center: .center, angle: .degrees(rotation1)),
+                    lineWidth: 4
+                )
+                .blur(radius: 4)
+                .opacity(0.9)
+
+            // Layer 2 — medium spread
+            HarborDesign.Radius.shape(cornerRadius)
+                .stroke(
+                    AngularGradient(colors: colors, center: .center, angle: .degrees(rotation2)),
+                    lineWidth: 8
+                )
+                .blur(radius: 12)
+                .opacity(0.6)
+
+            // Layer 3 — wide ambient glow
+            HarborDesign.Radius.shape(cornerRadius)
+                .stroke(
+                    AngularGradient(colors: colors, center: .center, angle: .degrees(rotation3)),
+                    lineWidth: 12
+                )
+                .blur(radius: 24)
+                .opacity(0.4)
+        }
+        .padding(1)
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.linear(duration: rotation1Duration).repeatForever(autoreverses: false)) {
+                rotation1 = 360
+            }
+            withAnimation(.linear(duration: rotation2Duration).repeatForever(autoreverses: false)) {
+                rotation2 = 360
+            }
+            withAnimation(.linear(duration: rotation3Duration).repeatForever(autoreverses: false)) {
+                rotation3 = 360
+            }
+        }
+    }
+}

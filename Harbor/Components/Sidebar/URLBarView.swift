@@ -1,0 +1,213 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  URLBarView.swift
+//  Harbor
+//
+//  Created by Maciek Bagiński on 28/07/2025.
+//
+
+import SwiftUI
+import AppKit
+import HarborDesign
+import HarborWeb
+import HarborUI
+
+struct URLBarView: View {
+    @EnvironmentObject var browserManager: BrowserManager
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.harborSettings) var harborSettings
+    @State private var isHovering: Bool = false
+    @State private var showCheckmark: Bool = false
+    var isSidebarHovered: Bool
+
+    var body: some View {
+        let session = browserManager.tabs.selectedSession(in: windowState)
+        ZStack {
+            HStack(spacing: HarborDesign.Spacing.sm) {
+                    // URL text area — tappable to open command palette
+                    Group {
+                        if session != nil {
+                            HStack(spacing: HarborDesign.Spacing.xs) {
+                                // HTTPS is the norm, so only a page that is not gets a mark.
+                                if isInsecure(for: session) {
+                                    Image(systemName: "lock.open.fill")
+                                        .font(.system(size: HarborDesign.Size.rowGlyph, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                                // Two texts so a narrow sidebar cuts the path first and then the
+                                // host's head: `accounts.google.com.x.evil.tld` must keep `evil.tld`.
+                                HStack(spacing: 0) {
+                                    Text(displayHost(for: session)).foregroundStyle(.primary)
+                                        .truncationMode(.head)
+                                        .layoutPriority(1)
+                                    Text(displayPath(for: session)).foregroundStyle(.tertiary)
+                                        .truncationMode(.tail)
+                                }
+                                .font(HarborDesign.Font.secondary)
+                                .lineLimit(1)
+                                if let errors = devErrorCount(for: session) {
+                                    Button {
+                                        browserManager.toggleDevPanel(.console)
+                                    } label: {
+                                        Text("\(errors)")
+                                            .font(HarborDesign.Font.micro.monospacedDigit())
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, HarborDesign.Spacing.xs)
+                                            .background(Capsule().fill(.red))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Console")
+                                }
+                            }
+                        } else {
+                            HStack(spacing: HarborDesign.Spacing.xs) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: HarborDesign.Size.rowGlyph, weight: .medium))
+                                    .foregroundStyle(textColor)
+                                Text("Search or Enter URL...")
+                                    .font(HarborDesign.Font.secondary)
+                                    .foregroundStyle(textColor)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .pointerStyle(.horizontalText)
+                    .onTapGesture {
+                        let urlString = session?.url.absoluteString ?? ""
+                        windowState.commandPalette?.open(prefill: urlString, navigateCurrentTab: true)
+                    }
+
+                    // Copy link button (show on hover when tab is selected)
+                    if isHovering, let session {
+                        Button("Copy Link", systemImage: showCheckmark ? "checkmark" : "link") {
+                            copyURLToClipboard(session.url.absoluteString)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(HarborIconButtonStyle(size: HarborDesign.Size.iconButton, radius: HarborDesign.Radius.sm))
+                        .foregroundStyle(Color.primary)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .contentTransition(.symbolEffect(.replace))
+                    }
+
+                    // Pinned extension buttons + library button
+                    if let extensionManager = browserManager.extensionManager {
+                        let pinnedIDs = browserManager.harborSettings?.pinnedExtensionIDs ?? []
+                        let pinnedExtensions = extensionManager.installedExtensions.filter { pinnedIDs.contains($0.id) }
+
+                        if !pinnedExtensions.isEmpty {
+                            ExtensionActionView(extensions: pinnedExtensions)
+                                .environmentObject(browserManager)
+                        }
+
+                        ExtensionLibraryButton()
+                            .environmentObject(browserManager)
+                            .onAppear {
+                                let installedIDs = extensionManager.installedExtensions
+                                    .filter { $0.isEnabled }
+                                    .map { $0.id }
+                                browserManager.harborSettings?.migrateExtensionPinStateIfNeeded(installedExtensionIDs: installedIDs)
+                            }
+                    }
+                }
+                .padding(.horizontal, HarborDesign.Spacing.rowPadding)
+        }
+        .frame(maxWidth: .infinity, minHeight: HarborDesign.Size.chromeControl, maxHeight: HarborDesign.Size.chromeControl)
+        .overlay(alignment: .bottom) {
+            PageLoadingProgressBar(session: session)
+        }
+        .clipShape(HarborDesign.Radius.shape(HarborDesign.Radius.md))
+        .harborControlSurface(in: HarborDesign.Radius.shape(HarborDesign.Radius.md))
+        // Report the frame in the window space so we can overlay the mini palette above all content
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: URLBarFramePreferenceKey.self,
+                    value: proxy.frame(in: .named("WindowSpace"))
+                )
+            }
+        )
+        .onHoverTracking { hovering in
+            withAnimation(HarborDesign.Motion.quick) {
+                isHovering = hovering
+            }
+        }
+        
+    }
+    
+    private var textColor: Color {
+        .secondary
+    }
+    
+    private func displayURL(for session: PageSession?) -> String {
+        guard let session else { return "" }
+        return formatURL(session.url)
+    }
+
+    private func isInsecure(for session: PageSession?) -> Bool { session?.url.scheme == "http" }
+    /// The host, carrying the port when the URL names a non-default one. A development
+    /// server at `localhost:3000` is a different origin from one at `localhost:8080`, so
+    /// dropping the port left the bar showing the wrong thing. `URL.port` reports a port
+    /// that was written out even when it is the scheme's default, so `https://x.com:443`
+    /// still reads as `x.com`.
+    private func displayHost(for session: PageSession?) -> String {
+        guard let url = session?.url, let host = url.host else { return displayURL(for: session) }
+        let defaultPort = url.scheme == "https" ? 443 : (url.scheme == "http" ? 80 : nil)
+        guard let port = url.port, port != defaultPort else { return host }
+        return "\(host):\(port)"
+    }
+    private func displayPath(for session: PageSession?) -> String {
+        guard let url = session?.url, url.host != nil else { return "" }
+        let path = url.path
+        // A developer's own server shows its query too: it is usually what is being tested.
+        if isDevPage(session), let query = url.query { return path + "?" + query }
+        return path == "/" ? "" : path
+    }
+
+    private func isDevPage(_ session: PageSession?) -> Bool {
+        guard let session, browserManager.harborSettings?.developerModeEnabled == true else { return false }
+        return DevHosts.isDevHost(session.url)
+    }
+
+    /// Errors since load on a developer's own server, for the badge; nil hides it.
+    private func devErrorCount(for session: PageSession?) -> Int? {
+        guard isDevPage(session), let count = session?.devCapture?.errorCount, count > 0 else { return nil }
+        return count
+    }
+
+
+        private func formatURL(_ url: URL) -> String {
+            guard let host = url.host else {
+                return url.absoluteString
+            }
+            
+            let cleanHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            
+            return cleanHost
+        }
+    
+    private func copyURLToClipboard(_ urlString: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(urlString, forType: .string)
+        
+        // Show checkmark icon briefly
+        withAnimation(HarborDesign.Motion.standard) {
+            showCheckmark = true
+        }
+        
+        // Show toast notification
+        windowState.isShowingCopyURLToast = true
+        
+        // Reset checkmark after 1 second
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(HarborDesign.Motion.standard) {
+                showCheckmark = false
+            }
+        }
+        
+        // Hide toast after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            windowState.isShowingCopyURLToast = false
+        }
+    }
+}

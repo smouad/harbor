@@ -1,0 +1,344 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  CookieManagementView.swift
+//  Harbor
+//
+//  Created by Jonathan Caudill on 15/08/2025.
+//
+
+import SwiftUI
+import HarborDesign
+
+struct CookieManagementView: View {
+    @StateObject private var cookieManager = CookieManager()
+    @State private var searchText: String = ""
+    @State private var selectedFilter: CookieFilter = .all
+    @State private var selectedSort: CookieSortOption = .domain
+    @State private var sortAscending: Bool = true
+    @State private var selectedCookie: CookieInfo?
+    @State private var showingCookieDetails: Bool = false
+    @State private var viewMode: ViewMode = .domain
+
+    enum ViewMode: String, CaseIterable {
+        case domain = "By Domain"
+        case list = "All Cookies"
+    }
+
+    /// Minimum height for the entry list; the pane grows from it.
+    private let entryListMinHeight: CGFloat = 260
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                summarySection
+                filterSection
+            }
+            .formStyle(.grouped)
+            .scrollDisabled(true)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            entryList
+                .frame(minHeight: entryListMinHeight)
+
+            Divider()
+
+            actionBar
+        }
+        .navigationTitle("Cookie Management")
+        .onAppear {
+            Task {
+                await cookieManager.loadCookies()
+            }
+        }
+        .sheet(isPresented: $showingCookieDetails) {
+            if let cookie = selectedCookie {
+                CookieDetailsView(cookie: cookie, cookieManager: cookieManager)
+            }
+        }
+    }
+
+    // MARK: - Entry List
+
+    @ViewBuilder
+    private var entryList: some View {
+        if cookieManager.isLoading {
+            VStack(spacing: HarborDesign.Spacing.md) {
+                ProgressView()
+                Text("Loading cookies...")
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            switch viewMode {
+            case .domain:
+                domainList
+            case .list:
+                flatList
+            }
+        }
+    }
+
+    private var domainList: some View {
+        List {
+            ForEach(filteredDomainGroups) { group in
+                DisclosureGroup {
+                    ForEach(filteredCookiesForGroup(group)) { cookie in
+                        CookieRowView(cookie: cookie) {
+                            selectedCookie = cookie
+                            showingCookieDetails = true
+                        } onDelete: {
+                            Task {
+                                await cookieManager.deleteCookie(cookie)
+                            }
+                        }
+                    }
+                } label: {
+                    DomainRowView(group: group) {
+                        Task {
+                            await cookieManager.deleteCookiesForDomain(group.domain)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    private var flatList: some View {
+        List(filteredAndSortedCookies) { cookie in
+            CookieRowView(cookie: cookie, showsDomain: true) {
+                selectedCookie = cookie
+                showingCookieDetails = true
+            } onDelete: {
+                Task {
+                    await cookieManager.deleteCookie(cookie)
+                }
+            }
+        }
+        .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    // MARK: - Summary
+
+    private var summarySection: some View {
+        let stats = cookieManager.getCookieStats()
+
+        return Section("Cookie Management") {
+            LabeledContent("Cookies") { Text("\(stats.total)") }
+            LabeledContent("Session") { Text("\(stats.session)") }
+            LabeledContent("Persistent") { Text("\(stats.persistent)") }
+            LabeledContent("Total size") { Text(formatSize(stats.totalSize)) }
+        }
+    }
+
+    // MARK: - Filters
+
+    private var filterSection: some View {
+        Section("Filter") {
+            LabeledContent("Search") {
+                TextField("Search cookies...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            Picker("View", selection: $viewMode) {
+                ForEach(ViewMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Show", selection: $selectedFilter) {
+                ForEach(CookieFilter.allCases, id: \.self) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+
+            Picker("Sort by", selection: $selectedSort) {
+                ForEach(CookieSortOption.allCases, id: \.self) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+
+            Picker("Order", selection: $sortAscending) {
+                Text("Ascending").tag(true)
+                Text("Descending").tag(false)
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    // MARK: - Action Bar
+
+    private var actionBar: some View {
+        HStack(spacing: HarborDesign.Spacing.lg) {
+            Button("Refresh") {
+                Task {
+                    await cookieManager.loadCookies()
+                }
+            }
+            .buttonStyle(.bordered)
+
+            Menu("Clear Cookies") {
+                Button("Clear Expired") {
+                    Task {
+                        await cookieManager.deleteExpiredCookies()
+                    }
+                }
+
+                Divider()
+
+                Button("Clear All", role: .destructive) {
+                    Task {
+                        await cookieManager.deleteAllCookies()
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+
+            Spacer()
+        }
+        .padding(HarborDesign.Spacing.xl)
+    }
+
+    // MARK: - Computed Properties
+
+    private var filteredDomainGroups: [DomainCookieGroup] {
+        let searchFiltered = searchText.isEmpty ? cookieManager.domainGroups : 
+            cookieManager.domainGroups.filter { group in
+                group.displayDomain.localizedCaseInsensitiveContains(searchText) ||
+                group.cookies.contains { cookie in
+                    cookie.name.localizedCaseInsensitiveContains(searchText)
+                }
+            }
+        
+        return searchFiltered
+    }
+    
+    private func filteredCookiesForGroup(_ group: DomainCookieGroup) -> [CookieInfo] {
+        let filtered = group.cookies.filter { selectedFilter.matches($0) }
+        return cookieManager.sortCookies(filtered, by: selectedSort, ascending: sortAscending)
+    }
+    
+    private var filteredAndSortedCookies: [CookieInfo] {
+        let searchFiltered = searchText.isEmpty ? cookieManager.cookies : cookieManager.searchCookies(searchText)
+        let filtered = cookieManager.filterCookies(selectedFilter).filter { cookie in
+            searchFiltered.contains { $0.id == cookie.id }
+        }
+        return cookieManager.sortCookies(filtered, by: selectedSort, ascending: sortAscending)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func formatSize(_ bytes: Int) -> String {
+        if bytes < 1024 {
+            return "\(bytes) bytes"
+        } else if bytes < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(bytes) / 1024.0)
+        } else {
+            return String(format: "%.1f MB", Double(bytes) / (1024.0 * 1024.0))
+        }
+    }
+}
+
+// MARK: - Supporting Views
+
+struct DomainRowView: View {
+    let group: DomainCookieGroup
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "globe")
+                .foregroundStyle(.blue)
+            
+            VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                Text(group.displayDomain)
+                    .font(HarborDesign.Font.label)
+                
+                Text("\(group.cookieCount) cookies • \(group.totalSizeDescription)")
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            if group.hasExpiredCookies {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help("Has expired cookies")
+            }
+            
+            Button("Delete All") {
+                onDelete()
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .foregroundStyle(.red)
+        }
+        .padding(.vertical, HarborDesign.Spacing.xs)
+    }
+}
+
+struct CookieRowView: View {
+    let cookie: CookieInfo
+    var showsDomain: Bool = false
+    let onTap: () -> Void
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            if showsDomain {
+                Image(systemName: cookie.isSecure ? "checkmark.circle.fill" : "xmark.circle")
+                    .foregroundStyle(cookie.isSecure ? .green : .red)
+                    .help(cookie.isSecure ? "Secure" : "Not secure")
+            }
+
+            VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                Text(cookie.name)
+                    .font(HarborDesign.Font.body.monospaced())
+                
+                HStack {
+                    if showsDomain {
+                        Text(cookie.displayDomain)
+                        Text("•")
+                    }
+                    Text(cookie.sizeDescription)
+                    Text("•")
+                    Text(cookie.expirationStatus)
+                    
+                    if cookie.isSecure {
+                        Text("• Secure")
+                    }
+                    
+                    if cookie.isHTTPOnly {
+                        Text("• HTTP Only")
+                    }
+                }
+                .font(HarborDesign.Font.caption)
+                .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            HStack {
+                Button("Details") {
+                    onTap()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                
+                Button("Delete") {
+                    onDelete()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, HarborDesign.Spacing.xxs)
+    }
+}

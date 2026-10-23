@@ -1,0 +1,162 @@
+! Title: Harbor Filters
+! Homepage: https://github.com/harbor-browser/harbor-filters
+! Description: Site-specific ad blocking rules for Harbor browser
+! Last modified: 2026-09-16
+! License: GPL-3.0
+
+! === YOUTUBE ===
+
+! --- Primary YouTube ad blocking comes from uBlock Origin's lists and scriptlets ---
+! (trusted-replace-fetch-response and set-constant on the player response; the
+!  nano-stb timer rule that used to sit here is uBO's own, and duplicated it)
+
+! --- No prevent-fetch/prevent-xhr on YouTube ---
+! These faked a successful empty response for ptracking and api/stats/ads, the
+! pings YouTube uses to confirm an ad played. uBO deliberately has no such rule:
+! it rewrites the player response so no ad is scheduled, and lets the telemetry
+! alone. Answering those with an empty 200 is a detection surface for nothing,
+! since there is no ad to hide by then.
+
+! --- Block ad network requests ---
+||googlevideo.com/initplayback?source=youtube&*oad=$xhr,domain=youtube.com
+*_ad_$media,domain=youtube.com,third-party
+
+! --- Cosmetic hiding: hide ad containers in the YouTube UI ---
+youtube.com##ytd-ad-slot-renderer
+youtube.com##ytd-in-feed-ad-layout-renderer
+youtube.com##ytd-banner-promo-renderer
+youtube.com##.ytp-ad-overlay-container
+youtube.com##.ytp-ad-text-overlay
+! YouTube's ad-block check plants div#player-ads.ytd-merch-shelf-renderer.ytp-featured-product
+! baits and reads their display: hide YouTube elements by tag name, never by that id or classes.
+youtube.com###masthead-ad
+youtube.com##ytd-promoted-sparkles-web-renderer
+youtube.com##ytd-promoted-video-renderer
+youtube.com##ytd-rich-item-renderer:has(ytd-ad-slot-renderer)
+youtube.com##ytd-rich-section-renderer:has(ytd-ad-slot-renderer)
+youtube.com##tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model)
+youtube.com##.ytp-ad-skip-button-container
+youtube.com##.ytp-ad-preview-container
+youtube.com##.ytp-ad-progress-list
+youtube.com##.ytp-ad-player-overlay
+youtube.com##ytd-display-ad-renderer
+youtube.com##ytd-statement-banner-renderer
+youtube.com##ytd-compact-promoted-item-renderer
+youtube.com##ytd-promoted-sparkles-text-search-renderer
+youtube.com##ytd-merch-shelf-renderer
+youtube.com##ytd-action-companion-ad-renderer
+youtube.com##ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]
+youtube.com##ytd-player-legacy-desktop-watch-ads-renderer
+
+! === FACEBOOK ===
+
+! --- GraphQL response pruning: strip sponsored data from API responses ---
+! --- No json-prune on the Facebook feed ---
+! facebook-feed-prune.js owns data.viewer.news_feed.edges and renumbers the
+! streamed $defer paths past what it removes. A json-prune rule with [-] deletes
+! array elements at the XHR layer, so the pruner's indices no longer match the
+! stream and its removals stop landing. These eight rules never ran until
+! scriptlets went live; uBO's own lists cover instream_video_ads and sideFeedUnit.
+
+! --- Set sponsored detection properties ---
+! __NEXT_DATA__ is a Next.js global and Facebook is not a Next.js app. Dead rule,
+! and set-constant pins the property non-writable, which is how uBO's YouTube
+! set-constant collided with our own object trap.
+
+! --- Sponsored post detection: handled by facebook-sponsored-blocker.js ---
+! (Dedicated JS content script uses Privacy Sandbox attributionsrc detection,
+!  geometric text reconstruction, and MutationObserver for dynamic feed)
+
+! --- Cosmetic hiding: sidebar ads only (feed posts handled by JS to avoid scroll breakage) ---
+facebook.com##div[role="complementary"] a[attributionsrc^="/privacy_sandbox/comet/register/source/"]
+
+! --- Network blocking: block ad-related requests ---
+! Measured against a live feed scroll: zero requests match. ads/dtsg also sits
+! next to Facebook's CSRF token endpoint, which is not worth risking for nothing.
+||facebook.com/tr?$image,third-party
+||connect.facebook.net/signals/$script
+||facebook.com/impression.php$image
+
+! === INSTAGRAM ===
+
+instagram.com##article:has(a[href*="/ads/about"])
+instagram.com##div[role="dialog"]:has(a[href*="/ads/about"])
+! instagram-feed-prune.js already filters this same edges array; a json-prune
+! rule with [-] removing elements from under it is the Facebook collision again.
+
+! === TWITTER / X ===
+
+twitter.com,x.com##+js(json-prune-fetch-response, data.timeline_by_id.timeline.instructions.[-].entries.[-].content.itemContent.promotedMetadata, , url:/graphql/)
+
+! === REDDIT ===
+
+reddit.com##shreddit-ad-post
+reddit.com##.promotedlink
+reddit.com###ad-slot
+reddit.com##shreddit-comments-page-ad
+reddit.com##div[data-testid="post-container"]:has(a[href*="/r/RedditAdvertising/"])
+
+! === ANTI-ADBLOCK WALLS ===
+
+! --- Freestar ad-block wall (vsco.co and other Freestar sites) ---
+! The inline wall script fetches its config from these hosts in turn and reports
+! to <host>/v2/abr. Without a config it never renders. First three are from
+! AdGuard Base antiadblock.txt; frfigures.com is the fourth host in the script.
+||config-factory.com^$third-party
+||content-settings.com^$third-party
+||site-config.com^$third-party
+||frfigures.com^$third-party
+! The config path is <site>.json on every host, so this catches new hosts too.
+/vsco-co.json^$third-party,domain=vsco.co
+! Last resort if the config shape changes: hide the modal (class names are per
+! build) and undo the body overflow lock. The wall also pins scrolling with
+! window.onscroll; set-constant on onscroll makes every write throw, so leave it.
+vsco.co##body > div[dir="auto"][id]:has(> div > div > h2 + span[tabindex])
+vsco.co#$#body:has(> div[dir="auto"][id] > div > div > h2 + span[tabindex]) { overflow: auto !important; }
+
+! --- jeep-cj.com "AdBlock Detected" wall ---
+! An obfuscated inline script runs four checks 3s after load: a bait div, a CSS
+! animation bait, fetch(adsbygoogle.js) and, on Safari, an XHR for the same
+! file. Any failure shows a modal that locks scrolling, and a MutationObserver
+! rebuilds the modal when it is hidden or collapsed, so cosmetic hiding loops.
+! Both remaining checks have to pass instead. The bait needs to render at its
+! 1x1 size, which is what these exceptions do. The two adsbygoogle.js probes
+! are answered by harbor-stealth-redirects.js, which is generic and needs no rule
+! here. An @@ exception could not do that job: WebKit evaluates each compiled
+! list on its own, so an exception here cannot override EasyList's pagead2
+! block in another list.
+jeep-cj.com#@#.pub_300x250
+jeep-cj.com#@#.pub_300x250m
+jeep-cj.com#@#.text-ad
+jeep-cj.com#@#.textAd
+jeep-cj.com#@#.text_ad
+jeep-cj.com#@#.adBanner
+jeep-cj.com#@#.ad-banner
+jeep-cj.com#@#.ad_box
+jeep-cj.com#@#.adbox
+
+! --- Ad-Shield's error modal (jeepforum.com and other Ad-Shield sites) ---
+! When its loader does not arrive intact, Ad-Shield's inline bootstrap replaces
+! the whole document with an iframe onto report.error-report.com/modal. Remove
+! that bootstrap before it runs, the way uBO does on its Ad-Shield domains, and
+! block the reporting host outright.
+||error-report.com^
+jeepforum.com##+js(remove-node-text, script, error-report.com)
+
+! === COMMON AD NETWORKS ===
+
+||pagead2.googlesyndication.com^
+||securepubads.g.doubleclick.net^
+||adservice.google.com^
+||static.ads-twitter.com^
+||ads.reddit.com^
+||pixel.facebook.com^
+||analytics.tiktok.com^
+
+! === OUTBOUND LINK REDIRECTS ===
+! Meta wraps outbound links in a redirect that logs the click. Go straight to the
+! destination, as uBlock already does for l.threads.com.
+||l.facebook.com/l.php?u=http$doc,urlskip=?u
+||lm.facebook.com/l.php?u=http$doc,urlskip=?u
+||l.messenger.com/l.php?u=http$doc,urlskip=?u
+||l.instagram.com/?u=http$doc,urlskip=?u

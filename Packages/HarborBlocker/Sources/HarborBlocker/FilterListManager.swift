@@ -1,0 +1,436 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  FilterListManager.swift
+//  Harbor
+//
+//  Downloads, caches, and updates uBlock Origin / EasyList filter lists.
+//  Stores raw text in ~/Library/Application Support/<bundle id>/ContentBlocker/FilterLists/.
+//  Uses conditional HTTP GET (ETag/Last-Modified) for bandwidth-efficient updates.
+//
+
+import Foundation
+import CryptoKit
+import OSLog
+
+@MainActor
+public final class FilterListManager {
+
+    public enum FilterListCategory: String, CaseIterable, Sendable {
+        case ads = "Ads"
+        case privacy = "Privacy"
+        case malware = "Malware"
+        case annoyances = "Annoyances"
+        case regional = "Regional"
+        case social = "Social"
+    }
+
+    public struct FilterList: Sendable {
+        public let name: String
+        public let url: URL
+        public let filename: String
+        let knownSizeRange: ClosedRange<Int>?  // Expected size range to detect gross tampering
+        public let category: FilterListCategory
+        public let isOptional: Bool
+        /// May invoke `trusted-*` scriptlets. uBO parity: its own lists only.
+        public let isTrusted: Bool
+
+        init(name: String, url: URL, filename: String, knownSizeRange: ClosedRange<Int>?, category: FilterListCategory = .ads, isOptional: Bool = false, isTrusted: Bool = false) {
+            self.name = name
+            self.url = url
+            self.filename = filename
+            self.knownSizeRange = knownSizeRange
+            self.category = category
+            self.isOptional = isOptional
+            self.isTrusted = isTrusted
+        }
+    }
+
+    nonisolated public static let defaultLists: [FilterList] = [
+        FilterList(name: "EasyList", url: URL(string: "https://easylist.to/easylist/easylist.txt")!, filename: "easylist.txt", knownSizeRange: 100_000...10_000_000, category: .ads),
+        FilterList(name: "EasyPrivacy", url: URL(string: "https://easylist.to/easylist/easyprivacy.txt")!, filename: "easyprivacy.txt", knownSizeRange: 50_000...5_000_000, category: .privacy),
+        FilterList(name: "Peter Lowe's", url: URL(string: "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext")!, filename: "peter-lowes.txt", knownSizeRange: 10_000...2_000_000, category: .ads),
+        FilterList(name: "uBlock Filters", url: URL(string: "https://ublockorigin.github.io/uAssetsCDN/filters/filters.min.txt")!, filename: "ublock-filters.min.txt", knownSizeRange: 50_000...5_000_000, category: .ads, isTrusted: true),
+        FilterList(name: "uBlock Unbreak", url: URL(string: "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt")!, filename: "ublock-unbreak.txt", knownSizeRange: 5_000...2_000_000, category: .ads, isTrusted: true),
+        FilterList(name: "uBlock Badware", url: URL(string: "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt")!, filename: "ublock-badware.txt", knownSizeRange: 5_000...2_000_000, category: .malware, isTrusted: true),
+        FilterList(name: "uBlock Privacy", url: URL(string: "https://ublockorigin.github.io/uAssetsCDN/filters/privacy.min.txt")!, filename: "ublock-privacy.min.txt", knownSizeRange: 5_000...2_000_000, category: .privacy, isTrusted: true),
+        FilterList(name: "uBlock Quick Fixes", url: URL(string: "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt")!, filename: "ublock-quick-fixes.txt", knownSizeRange: 1_000...2_000_000, category: .ads, isTrusted: true),
+        FilterList(name: "AdGuard URL Tracking Protection", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/17.txt")!, filename: "adguard-url-tracking.txt", knownSizeRange: 20_000...5_000_000, category: .privacy),
+        FilterList(name: "Online Malicious URL Blocklist", url: URL(string: "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-online.txt")!, filename: "urlhaus-filter.txt", knownSizeRange: 10_000...5_000_000, category: .malware),
+    ]
+
+    /// Lists shipped only in the app bundle (no remote source). Resource name without extension.
+    nonisolated static let bundledOnlyLists: [String] = ["harbor-filters-default"]
+
+    nonisolated public static let optionalLists: [FilterList] = [
+        // Annoyances
+        FilterList(name: "AdGuard Annoyances", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/14.txt")!, filename: "adguard-annoyances.txt", knownSizeRange: 10_000...5_000_000, category: .annoyances, isOptional: true),
+        FilterList(name: "uBlock Annoyances (cookies)", url: URL(string: "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances-cookies.txt")!, filename: "ublock-annoyances-cookies.txt", knownSizeRange: 1_000...2_000_000, category: .annoyances, isOptional: true),
+        FilterList(name: "uBlock Annoyances (others)", url: URL(string: "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances-others.txt")!, filename: "ublock-annoyances-others.txt", knownSizeRange: 1_000...2_000_000, category: .annoyances, isOptional: true),
+        FilterList(name: "EasyList Cookie", url: URL(string: "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt")!, filename: "easylist-cookie.txt", knownSizeRange: 10_000...5_000_000, category: .annoyances, isOptional: true),
+        FilterList(name: "Fanboy's Annoyance", url: URL(string: "https://secure.fanboy.co.nz/fanboy-annoyance.txt")!, filename: "fanboy-annoyance.txt", knownSizeRange: 10_000...5_000_000, category: .annoyances, isOptional: true),
+        FilterList(name: "Fanboy's Social", url: URL(string: "https://easylist.to/easylist/fanboy-social.txt")!, filename: "fanboy-social.txt", knownSizeRange: 5_000...5_000_000, category: .social, isOptional: true),
+        // AdGuard
+        FilterList(name: "AdGuard Base", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/2.txt")!, filename: "adguard-base.txt", knownSizeRange: 50_000...10_000_000, category: .ads, isOptional: true),
+        FilterList(name: "AdGuard Mobile Ads", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/11.txt")!, filename: "adguard-mobile.txt", knownSizeRange: 5_000...5_000_000, category: .ads, isOptional: true),
+        FilterList(name: "AdGuard Tracking Protection", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/3.txt")!, filename: "adguard-tracking.txt", knownSizeRange: 10_000...5_000_000, category: .privacy, isOptional: true),
+        // Regional
+        FilterList(name: "AdGuard Chinese", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/224.txt")!, filename: "adguard-chinese.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard Japanese", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/7.txt")!, filename: "adguard-japanese.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard French", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/16.txt")!, filename: "adguard-french.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard German", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/6.txt")!, filename: "adguard-german.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard Russian", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/1.txt")!, filename: "adguard-russian.txt", knownSizeRange: 10_000...10_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard Spanish/Portuguese", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/9.txt")!, filename: "adguard-spanish.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "AdGuard Turkish", url: URL(string: "https://filters.adtidy.org/extension/ublock/filters/13.txt")!, filename: "adguard-turkish.txt", knownSizeRange: 5_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "IndianList", url: URL(string: "https://raw.githubusercontent.com/nickspaargaren/IndianList/master/IndianList.txt")!, filename: "indianlist.txt", knownSizeRange: 1_000...5_000_000, category: .regional, isOptional: true),
+        FilterList(name: "KoreanList", url: URL(string: "https://raw.githubusercontent.com/nickspaargaren/Korean-Adblock-List/master/koreanlist.txt")!, filename: "koreanlist.txt", knownSizeRange: 1_000...5_000_000, category: .regional, isOptional: true),
+    ]
+
+    /// Returns currently enabled optional lists
+    var enabledOptionalLists: [FilterList] {
+        let enabled = enabledOptionalFilterListFilenames
+        return Self.optionalLists.filter { enabled.contains($0.filename) }
+    }
+
+    /// Filenames of enabled optional filter lists (persisted externally via HarborSettingsService)
+    public var enabledOptionalFilterListFilenames: Set<String> = []
+
+    private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Harbor", category: "FilterListManager")
+
+    private let cacheDir: URL
+    private let etagDir: URL
+    private let session: URLSession
+
+    init() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = appSupport.appendingPathComponent("\(Bundle.main.bundleIdentifier ?? "Harbor")/ContentBlocker/FilterLists", isDirectory: true)
+        self.cacheDir = base
+        self.etagDir = base.appendingPathComponent(".etags", isDirectory: true)
+
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
+        self.session = URLSession(configuration: config)
+
+        // Ensure directories exist
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: etagDir, withIntermediateDirectories: true)
+    }
+
+    // MARK: - Public API
+
+    /// Returns all cached filter list contents. Downloads any missing lists first.
+    func loadAllFilterLists() async -> [String] {
+        var results: [String] = []
+
+        for list in Self.defaultLists {
+            if let content = loadCachedList(list) {
+                results.append(content)
+            }
+        }
+
+        return results
+    }
+
+    /// Returns true if any lists were actually downloaded (changed on disk).
+    var hasCachedLists: Bool {
+        for list in Self.defaultLists {
+            let file = cacheDir.appendingPathComponent(list.filename)
+            if FileManager.default.fileExists(atPath: file.path) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Download filter lists (default + enabled optional) whose `! Expires:` interval has elapsed
+    /// since the last check, or all of them when `force` is set. Returns true if any list changed.
+    @discardableResult
+    func downloadAllLists(force: Bool = false) async -> Bool {
+        var anyUpdated = false
+
+        let allLists = (Self.defaultLists + enabledOptionalLists).filter { force || isDue($0) }
+        guard !allLists.isEmpty else { return false }
+        Self.log.info("Checking \(allLists.count) filter list(s) for updates")
+
+        await withTaskGroup(of: Bool.self) { group in
+            for list in allLists {
+                group.addTask { [self] in
+                    await self.downloadList(list)
+                }
+            }
+
+            for await updated in group {
+                if updated { anyUpdated = true }
+            }
+        }
+
+        return anyUpdated
+    }
+
+    /// Load all cached filter lists and return as individual rule lines for SafariConverterLib.
+    /// One entry per list, carrying whether it may use `trusted-*` scriptlets.
+    /// The engine is built from these rather than one blob because
+    /// `ParseOptions.permissions` is applied per parse.
+    public struct Source: Sendable {
+        public let rules: String
+        public let isTrusted: Bool
+    }
+
+    /// Runs off the main actor, so the caller passes a snapshot of the enabled set.
+    nonisolated func loadFilterSources(enabledFilenames: Set<String>) -> [Source] {
+        let optional = Self.optionalLists.filter { enabledFilenames.contains($0.filename) }
+        // Launch waits on this, and the lists are a few large files: one per core.
+        var sources = (Self.defaultLists + optional).concurrentMap { list in
+            loadCachedList(list).map { Source(rules: FilterPreprocessor.apply($0), isTrusted: list.isTrusted) }
+        }.compactMap { $0 }
+        for name in Self.bundledOnlyLists {
+            if let url = Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Resources"),
+               let content = try? String(contentsOf: url, encoding: .utf8) {
+                sources.append(Source(rules: content, isTrusted: true))
+            }
+        }
+        return sources
+    }
+
+    /// The same rules as `loadFilterSources`, flattened for the content rule list compiler.
+    nonisolated static func lines(from sources: [Source]) -> [String] {
+        sources.concurrentMap { source in
+            source.rules.components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }.flatMap { $0 }
+    }
+
+    // MARK: - Expiry
+
+    /// Update interval from the list's own `! Expires: N days|hours` header (uBO semantics).
+    /// Defaults to 24h; clamped to 1h...7d.
+    nonisolated func updateInterval(for list: FilterList) -> TimeInterval {
+        let fallback: TimeInterval = 24 * 3600
+        guard let content = loadCachedListHeader(list) else { return fallback }
+        for line in content.split(separator: "\n", maxSplits: 40, omittingEmptySubsequences: true) {
+            guard line.hasPrefix("!") else { if !line.hasPrefix("[") { break } else { continue } }
+            let lower = line.lowercased()
+            guard let r = lower.range(of: "expires:") else { continue }
+            let rest = lower[r.upperBound...].trimmingCharacters(in: .whitespaces)
+            let parts = rest.split(separator: " ")
+            guard parts.count >= 2, let n = Double(parts[0]) else { break }
+            let unit = parts[1]
+            let seconds: TimeInterval = unit.hasPrefix("hour") ? n * 3600 : unit.hasPrefix("day") ? n * 86400 : fallback
+            return min(max(seconds, 3600), 7 * 86400)
+        }
+        return fallback
+    }
+
+    private func checkedFile(for list: FilterList) -> URL { etagDir.appendingPathComponent(list.filename + ".checked") }
+
+    private func isDue(_ list: FilterList) -> Bool {
+        guard FileManager.default.fileExists(atPath: cacheDir.appendingPathComponent(list.filename).path) else { return true }
+        guard let stamp = try? String(contentsOf: checkedFile(for: list), encoding: .utf8), let t = TimeInterval(stamp) else { return true }
+        return Date().timeIntervalSince1970 - t >= updateInterval(for: list)
+    }
+
+    private func markChecked(_ list: FilterList) {
+        try? String(Date().timeIntervalSince1970).write(to: checkedFile(for: list), atomically: true, encoding: .utf8)
+    }
+
+    // MARK: - Private
+
+    /// Where a list can be read from: the downloaded copy, then the bundled one under its own
+    /// name or with a "-default" suffix (harbor-filters-default.txt).
+    private nonisolated func listFiles(_ list: FilterList) -> [URL] {
+        let bundleName = (list.filename as NSString).deletingPathExtension
+        let bundleExt = (list.filename as NSString).pathExtension
+        return [cacheDir.appendingPathComponent(list.filename)] + [bundleName, bundleName + "-default"].compactMap {
+            Bundle.module.url(forResource: $0, withExtension: bundleExt, subdirectory: "Resources")
+        }
+    }
+
+    private nonisolated func loadCachedList(_ list: FilterList) -> String? {
+        for file in listFiles(list) {
+            if let content = try? String(contentsOf: file, encoding: .utf8) { return content }
+        }
+        return nil
+    }
+
+    /// The first 4 KB, enough for the header. The expiry check runs on the main actor for every
+    /// list right after activation, and reading each list whole held launch up by 385 ms.
+    private nonisolated func loadCachedListHeader(_ list: FilterList) -> String? {
+        for file in listFiles(list) {
+            guard let handle = try? FileHandle(forReadingFrom: file) else { continue }
+            defer { try? handle.close() }
+            if let data = try? handle.read(upToCount: 4096) { return String(decoding: data, as: UTF8.self) }
+        }
+        return nil
+    }
+
+    /// Download a single filter list. Returns true if the list was updated.
+    private func downloadList(_ list: FilterList) async -> Bool {
+        let destFile = cacheDir.appendingPathComponent(list.filename)
+        let etagFile = etagDir.appendingPathComponent(list.filename + ".etag")
+
+        var request = URLRequest(url: list.url)
+
+        // Conditional GET
+        if let etag = try? String(contentsOf: etagFile, encoding: .utf8) {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+        if FileManager.default.fileExists(atPath: destFile.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: destFile.path),
+           let modDate = attrs[.modificationDate] as? Date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(identifier: "GMT")
+            request.setValue(formatter.string(from: modDate), forHTTPHeaderField: "If-Modified-Since")
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+
+            if httpResponse.statusCode == 304 {
+                Self.log.info("\(list.name): not modified")
+                markChecked(list)
+                return false
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                Self.log.warning("\(list.name): HTTP \(httpResponse.statusCode)")
+                return false
+            }
+
+            // Drop an oversized body before decoding and scanning it. Most lists
+            // arrive compressed with no declared length, so the byte count is checked too.
+            if let maxSize = list.knownSizeRange?.upperBound,
+               max(Int64(data.count), httpResponse.expectedContentLength) > Int64(maxSize) {
+                Self.log.warning("\(list.name, privacy: .public): body exceeds \(maxSize) bytes, keeping previous cached version")
+                return false
+            }
+
+            // Validate content before writing to disk
+            guard let content = String(data: data, encoding: .utf8) else {
+                Self.log.warning("\(list.name): downloaded data is not valid UTF-8")
+                return false
+            }
+
+            if !validateFilterListContent(content, for: list) {
+                Self.log.warning("\(list.name, privacy: .public): validation failed, keeping previous cached version")
+                return false
+            }
+
+            // Compute hash and check for changes
+            let newHash = computeHash(content)
+            if let previousHash = storedHash(for: list), previousHash != newHash {
+                Self.log.info("\(list.name): content hash changed from \(previousHash.prefix(16)) to \(newHash.prefix(16))")
+            }
+
+            // Save content
+            try data.write(to: destFile, options: .atomic)
+
+            // Store hash alongside the list
+            storeHash(newHash, for: list)
+
+            // Save ETag
+            if let etag = httpResponse.value(forHTTPHeaderField: "ETag") {
+                try? etag.write(to: etagFile, atomically: true, encoding: .utf8)
+            }
+
+            markChecked(list)
+            Self.log.info("\(list.name): updated (\(data.count) bytes, hash: \(newHash.prefix(16)))")
+            return true
+        } catch {
+            Self.log.error("\(list.name): download failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    // MARK: - Content Validation
+
+    private func validateFilterListContent(_ content: String, for list: FilterList) -> Bool {
+        // Basic structural validation
+        guard !content.isEmpty else { return false }
+
+        // Filter lists should be text-based with recognizable patterns
+        let lines = content.components(separatedBy: "\n")
+        guard lines.count > 10 else { return false }  // Too small to be a real filter list
+
+        // Check that first non-empty line looks like a filter list header
+        let firstNonEmpty = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+        let validHeaders = ["[Adblock", "! Title:", "! Homepage:", "!", "#"]
+        let looksLikeFilterList = validHeaders.contains(where: { firstNonEmpty.hasPrefix($0) })
+
+        if !looksLikeFilterList {
+            Self.log.warning("Filter list '\(list.name, privacy: .public)' has unexpected header: \(firstNonEmpty.prefix(50), privacy: .public)")
+            return false
+        }
+
+        // Check size is within expected range (if specified)
+        if let sizeRange = list.knownSizeRange {
+            let contentSize = content.utf8.count
+            if !sizeRange.contains(contentSize) {
+                Self.log.warning("Filter list '\(list.name)' size \(contentSize) outside expected range \(sizeRange)")
+                return false
+            }
+        }
+
+        // Check for suspicious patterns that shouldn't be in filter lists
+        let suspiciousPatterns = [
+            "eval(", "Function(", "new Function",
+            "document.cookie", "localStorage.", "sessionStorage.",
+            "XMLHttpRequest", "fetch(", ".send(",
+            "window.location =", "window.location.href ="
+        ]
+
+        // Only flag if these appear outside of standard scriptlet patterns
+        // (scriptlets legitimately contain some of these for interception purposes)
+        var suspiciousCount = 0
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Skip comments and scriptlet rules (`##+js(`, `#@#+js(`)
+            if trimmed.hasPrefix("!") || trimmed.hasPrefix("#") || trimmed.contains("#+js(") { continue }
+            // Check non-filter-rule lines for suspicious content
+            for pattern in suspiciousPatterns {
+                if trimmed.contains(pattern) {
+                    suspiciousCount += 1
+                }
+            }
+        }
+
+        if suspiciousCount > 50 {
+            Self.log.warning("Filter list '\(list.name)' contains \(suspiciousCount) suspicious patterns")
+            return false
+        }
+
+        return true
+    }
+
+    // MARK: - Hash Verification
+
+    private func computeHash(_ content: String) -> String {
+        let data = Data(content.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func storeHash(_ hash: String, for list: FilterList) {
+        let hashFile = cacheDir.appendingPathComponent(list.filename + ".sha256")
+        try? hash.write(to: hashFile, atomically: true, encoding: .utf8)
+    }
+
+    private func storedHash(for list: FilterList) -> String? {
+        let hashFile = cacheDir.appendingPathComponent(list.filename + ".sha256")
+        return try? String(contentsOf: hashFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension Array {
+    /// `map` across cores with the order kept. For a few large items, not many small ones.
+    func concurrentMap<T>(_ transform: (Element) -> T) -> [T] {
+        var out = [T?](repeating: nil, count: count)
+        out.withUnsafeMutableBufferPointer { slots in
+            DispatchQueue.concurrentPerform(iterations: count) { slots[$0] = transform(self[$0]) }
+        }
+        return out.map { $0! }
+    }
+}

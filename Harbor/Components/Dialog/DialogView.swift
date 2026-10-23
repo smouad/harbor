@@ -1,0 +1,57 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  DialogView.swift
+//  Harbor
+//
+//  Created by Maciek Bagiński on 04/08/2025.
+//
+
+import SwiftUI
+import HarborDesign
+
+struct DialogView: View {
+    @EnvironmentObject var browserManager: BrowserManager
+
+    var body: some View {
+        ZStack {
+            if browserManager.dialogManager.isVisible,
+               let dialog = browserManager.dialogManager.activeDialog {
+                overlayBackground
+                dialogContent(dialog)
+                    .transition(.asymmetric(
+                        insertion: .offset(y: 30).combined(with: .blur(intensity: 3, scale: 1)),
+                        removal: .offset(y: -30).combined(with: .blur(intensity: 3, scale: 1))
+                    ))
+                    .zIndex(1)
+            }
+        }
+        .animation(HarborDesign.Motion.spring, value: browserManager.dialogManager.isVisible)
+        .onChange(of: browserManager.dialogManager.isVisible) { _, isVisible in
+            if isVisible {
+                // Resign WebView first responder so keyboard events reach the dialog
+                if let window = NSApp.keyWindow {
+                    window.makeFirstResponder(nil)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var overlayBackground: some View {
+        HarborDesign.Surface.scrim
+            .ignoresSafeArea()
+            .onTapGesture {
+                browserManager.dialogManager.closeDialog()
+            }
+            .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func dialogContent(_ dialog: AnyView) -> some View {
+        HStack {
+            Spacer()
+            dialog
+            Spacer()
+        }
+    }
+}

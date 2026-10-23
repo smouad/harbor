@@ -1,0 +1,15 @@
+Harbor
+Copyright (C) 2026 the Harbor contributors
+
+Harbor is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License version 3 (see LICENSE).
+
+Harbor is a modified version of Nook (https://github.com/nook-browser/Nook),
+copyright its contributors and licensed under GPL-3.0. It was forked from
+commit 18dbbc029b86edf169615a89a1c8d5a2c736fdfb on 2026-10-23 and has been
+renamed and changed since. This notice is required by section 5(a) of the
+GPL-3.0 and must be kept.
+
+Third-party components keep their own licenses: adblock-rust (MPL-2.0),
+uBlock Origin scriptlets and resources (GPL-3.0), and the packages listed in
+Harbor.xcodeproj's package dependencies.

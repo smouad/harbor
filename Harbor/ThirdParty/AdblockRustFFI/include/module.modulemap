@@ -1,0 +1,4 @@
+module HarborAdblockFFI {
+    header "harbor_adblock.h"
+    export *
+}
