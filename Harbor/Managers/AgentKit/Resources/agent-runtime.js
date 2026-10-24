@@ -109,10 +109,13 @@
         return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0.01;
     }
 
-    // Collects elements from the document and its same-origin frames, with each frame's offset
-    // so rects come out in the top viewport.
+    // Collects elements from the document, its open shadow roots and its same-origin frames, with
+    // each frame's offset so rects come out in the top viewport.
     function collect(selector, root = document, offset = { x: 0, y: 0 }, out = []) {
         for (const el of root.querySelectorAll(selector)) out.push({ el, offset });
+        for (const host of root.querySelectorAll("*")) {
+            if (host.shadowRoot) collect(selector, host.shadowRoot, offset, out);
+        }
         for (const frame of root.querySelectorAll("iframe, frame")) {
             let doc = null;
             try { doc = frame.contentDocument; } catch { doc = null; }
@@ -251,15 +254,28 @@
         const px = r.left + offset.x + r.width / 2;
         const py = r.top + offset.y + r.height / 2;
         let top = document.elementFromPoint(px, py);
-        // Descend into same-origin frames to find what is really under the point.
-        while (top && (top.tagName === "IFRAME" || top.tagName === "FRAME")) {
-            let doc = null;
-            try { doc = top.contentDocument; } catch { doc = null; }
-            if (!doc) break;
-            const fr = top.getBoundingClientRect();
-            top = doc.elementFromPoint(px - fr.left - top.clientLeft, py - fr.top - top.clientTop);
+        // Descend into same-origin frames and open shadow roots to find what is really there.
+        for (let depth = 0; top && depth < 16; depth++) {
+            if (top.shadowRoot) {
+                const inner = top.shadowRoot.elementFromPoint(px, py);
+                if (!inner || inner === top) break;
+                top = inner;
+            } else if (top.tagName === "IFRAME" || top.tagName === "FRAME") {
+                let doc = null;
+                try { doc = top.contentDocument; } catch { doc = null; }
+                if (!doc) break;
+                const fr = top.getBoundingClientRect();
+                top = doc.elementFromPoint(px - fr.left - top.clientLeft, py - fr.top - top.clientTop);
+            } else {
+                break;
+            }
         }
-        const hit = !!top && (top === el || el.contains(top) || top.contains(el) || (el.tagName === "LABEL" && el.control === top));
+        // Containment across shadow roots: a slotted element sits inside its host's tree.
+        const within = (outer, inner) => {
+            for (let node = inner; node; node = node.parentNode || node.host) if (node === outer) return true;
+            return false;
+        };
+        const hit = !!top && (within(el, top) || within(top, el) || (el.tagName === "LABEL" && el.control === top));
         return {
             x: px, y: py, hit, covering: hit || !top ? undefined : describe(top),
             element: describe(el, offset), viewport: { w: innerWidth, h: innerHeight }
@@ -634,9 +650,12 @@
         const seenLinks = new Set();
         const esc = s => s.replace(/([\\`*_[\]])/g, "\\$1");
 
+        // What an element shows: its shadow root's nodes when it has one (slots bring in the rest).
+        const shown = el => el.shadowRoot ? el.shadowRoot.childNodes : el.childNodes;
+
         function inline(node) {
             let out = "";
-            for (const child of node.childNodes) out += render(child, 0, true);
+            for (const child of shown(node)) out += render(child, 0, true);
             return out.replace(/\s+/g, " ");
         }
 
@@ -673,16 +692,23 @@
             if (SKIP.has(el.tagName) || el.hidden) return "";
             if (dropChrome && el.matches(CHROME)) return "";
             const style = el.checkVisibility ? null : getComputedStyle(el);
-            if (el.checkVisibility ? !el.checkVisibility({ visibilityProperty: true }) : style.display === "none") return "";
+            // A display: contents element has no box, so checkVisibility calls it hidden; its
+            // children still show (Reddit wraps its whole feed in them, and every slot is one).
+            if (el.checkVisibility ? !el.checkVisibility({ visibilityProperty: true }) && getComputedStyle(el).display !== "contents"
+                : style.display === "none") return "";
             const tag = el.tagName;
             switch (tag) {
                 case "H1": case "H2": case "H3": case "H4": case "H5": case "H6": {
                     const text = inline(el).trim();
                     return text ? `\n\n${"#".repeat(Number(tag[1]))} ${text}\n\n` : "";
                 }
+                case "SLOT": {
+                    const assigned = el.assignedNodes({ flatten: true });
+                    return (assigned.length ? assigned : [...el.childNodes]).map(n => render(n, depth, inLine)).join("");
+                }
                 case "P": case "SECTION": case "DIV": case "ARTICLE": case "MAIN": case "HEADER": case "FIGURE": {
                     let inner = "";
-                    for (const child of el.childNodes) inner += render(child, depth, inLine);
+                    for (const child of shown(el)) inner += render(child, depth, inLine);
                     return inLine ? inner : `\n\n${inner.trim()}\n\n`;
                 }
                 case "BR": return inLine ? " " : "\n";
@@ -716,7 +742,7 @@
                 case "INPUT": case "SELECT": case "TEXTAREA": case "BUTTON": return "";
                 default: {
                     let inner = "";
-                    for (const child of el.childNodes) inner += render(child, depth, inLine);
+                    for (const child of shown(el)) inner += render(child, depth, inLine);
                     const display = (style || getComputedStyle(el)).display;
                     return !inLine && display && !display.startsWith("inline") ? `\n${inner}\n` : inner;
                 }

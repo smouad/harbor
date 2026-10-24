@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Browser check</title></head><body>
+<main id="main"></main>
+<script>
+  // Like a site that sniffs the user agent and turns Safari away.
+  const chrome = navigator.userAgent.includes("Chrome/");
+  document.getElementById("main").textContent = chrome
+    ? "Welcome to the app."
+    : "Your browser is not supported. Please use Google Chrome.";
+</script>
+</body></html>

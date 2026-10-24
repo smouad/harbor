@@ -401,11 +401,26 @@ enum AgentPageWait {
                 "return [document.readyState, location.href]", contentWorld: AgentRuntime.world) as? [String]
             if let state, state.count == 2, state[0] == "complete", reloading || state[1] != previous,
                state[1] != "about:blank" || url.absoluteString == "about:blank" {
-                return true
+                return await presentAsChromeIfTurnedAway(webView, url: url, deadline: deadline)
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
         return false
+    }
+
+    /// A page that says the browser is not supported is opened again presenting as Chrome, once,
+    /// and its site remembered (ChromeIdentity.learned), when the person allows it.
+    private static func presentAsChromeIfTurnedAway(_ webView: WKWebView, url: URL, deadline: Date) async -> Bool {
+        guard let session = (webView as? SessionWebView)?.owningSession, session.isAgentPage,
+              session.controller?.settings.agentPresentsAsChrome == true,
+              session.userAgentOverride == nil, let host = webView.url?.host,
+              !(webView.customUserAgent ?? "").contains("Chrome/"),
+              let text = try? await webView.callAsyncJavaScript(
+                  "return document.body ? document.body.innerText : ''", contentWorld: AgentRuntime.world) as? String,
+              ChromeIdentity.turnsBrowserAway(text) else { return true }
+        AgentHub.log.notice("\(host, privacy: .public) turned Safari away; presenting as Chrome there")
+        ChromeIdentity.learn(host)
+        return await open(webView, url: url, timeout: max(1, deadline.timeIntervalSinceNow))
     }
 
     /// Until the URL contains `pattern`, or matches it when written `/regex/`.

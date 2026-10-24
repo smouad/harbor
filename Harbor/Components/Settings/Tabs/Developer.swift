@@ -61,11 +61,11 @@ struct SettingsDeveloperTab: View {
                         Text("Any tab").tag(AgentTabAccess.always)
                     }
                     Toggle("Extensions in agent tabs", isOn: $settings.agentExtensionsEnabled)
-                    Toggle("Agent tabs present as Chrome", isOn: $settings.agentPresentsAsChrome)
+                    Toggle("Switch to Chrome where Safari is turned away", isOn: $settings.agentPresentsAsChrome)
                 } header: {
                     Text("Agents")
                 } footer: {
-                    Text("Agents work in the Agent space. With Ask for each tab, an agent can also use one of your tabs once you allow it on its card; with Any tab, without asking. A tab an agent is using shows the Agent frame. Extensions apply to tabs opened after the change. Chrome makes sites that turn Safari away let agents in.")
+                    Text("Agents work in the Agent space. With Ask for each tab, an agent can also use one of your tabs once you allow it on its card; with Any tab, without asking. A tab an agent is using shows the Agent frame. Extensions apply to tabs opened after the change. When a site tells an agent its browser is not supported, the agent's tabs present as Chrome there from then on.")
                         .font(HarborDesign.Font.caption)
                         .foregroundStyle(.secondary)
                 }

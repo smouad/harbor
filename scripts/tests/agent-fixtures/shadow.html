@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Shadow fixture</title></head><body>
+<!-- Built like Reddit's feed: a display: contents wrapper, custom elements with open shadow roots,
+     content slotted in from the light DOM, and controls only inside the shadow root. -->
+<main>
+  <h1>Feed</h1>
+  <div style="display: contents">
+    <x-post><a slot="title" href="/p1.html">Slotted post title</a><p>Light body text</p></x-post>
+  </div>
+</main>
+<p id="clicked">no click</p>
+<script>
+  customElements.define("x-post", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML = `
+        <style>article { display: block; padding: 4px; }</style>
+        <article><h2><slot name="title"></slot></h2><slot></slot>
+          <p>Shadow-only credit line</p>
+          <button id="vote">Upvote</button></article>`;
+      this.shadowRoot.getElementById("vote").addEventListener("click", e => {
+        document.getElementById("clicked").textContent = "voted " + e.isTrusted;
+      });
+    }
+  });
+</script>
+</body></html>

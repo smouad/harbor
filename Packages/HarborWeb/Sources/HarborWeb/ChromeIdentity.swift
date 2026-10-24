@@ -7,8 +7,11 @@
 //  Chrome's user agent on the request and in `navigator.userAgent`, plus what sites check beside
 //  it (`navigator.userAgentData`, `navigator.vendor`, `window.chrome`). The engine is still WebKit,
 //  so a site that needs Chrome-only APIs can still fail; most only read the user agent.
-//  Agent pages present as Chrome while Settings > Developer says so; the person's own tabs do on
-//  the sites they list. A tool can set it for one page (`PageSession.userAgentOverride`).
+//  Presenting as Chrome everywhere costs more than it gains: Google's bot check flags a Chrome user
+//  agent on WebKit and answered a fresh visit with "unusual traffic", where Safari's went through.
+//  So pages stay Safari except on the sites the person lists, and on agent pages (while Settings >
+//  Developer allows it) on sites a page told the agent its browser is not supported (`learned`,
+//  kept across launches). A tool can set it for one page (`PageSession.userAgentOverride`).
 //
 
 import Foundation
@@ -22,6 +25,31 @@ public enum ChromeIdentity {
     /// Chrome's reduced user agent on a Mac.
     public static let userAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\(majorVersion).0.0.0 Safari/537.36"
+
+    /// Sites that told an agent its browser is not supported; agent pages present as Chrome there.
+    public private(set) static var learned: [String] = UserDefaults.standard.stringArray(forKey: learnedKey) ?? []
+    private static let learnedKey = "HarborAgentChromeSites"
+
+    public static func learn(_ host: String) {
+        let site = host.lowercased().hasPrefix("www.") ? String(host.lowercased().dropFirst(4)) : host.lowercased()
+        guard !site.isEmpty, !matches(host: site, sites: learned) else { return }
+        learned.append(site)
+        UserDefaults.standard.set(learned, forKey: learnedKey)
+    }
+
+    /// Words a page uses to turn a browser away, in the first part of its text.
+    public static func turnsBrowserAway(_ text: String) -> Bool {
+        let head = text.prefix(2000).lowercased()
+        return awayPhrases.contains { head.contains($0) }
+    }
+
+    private static let awayPhrases = [
+        "browser is not supported", "browser isn't supported", "browser is no longer supported", "browser not supported",
+        "unsupported browser", "use a supported browser", "switch to a supported browser", "safari is not supported",
+        "safari isn't supported", "not compatible with your browser", "isn't compatible with your browser",
+        "please use google chrome", "please use chrome", "only works in chrome", "only works on chrome",
+        "requires google chrome", "update your browser to continue", "upgrade your browser to continue"
+    ]
 
     /// Whether `host` is one of `sites` or under one (a listed domain covers its subdomains).
     public static func matches(host: String?, sites: [String]) -> Bool {
@@ -82,7 +110,9 @@ extension PageSession {
     func wantedUserAgent(for url: URL) -> String? {
         if let userAgentOverride { return userAgentOverride }
         guard let settings = controller?.settings else { return PlatformUserAgent.custom }
-        if isAgentPage, settings.agentPresentsAsChrome { return ChromeIdentity.userAgent }
+        if isAgentPage, settings.agentPresentsAsChrome, ChromeIdentity.matches(host: url.host, sites: ChromeIdentity.learned) {
+            return ChromeIdentity.userAgent
+        }
         if ChromeIdentity.matches(host: url.host, sites: settings.chromeIdentitySites) { return ChromeIdentity.userAgent }
         return PlatformUserAgent.custom
     }

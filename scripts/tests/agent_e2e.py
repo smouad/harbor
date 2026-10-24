@@ -150,20 +150,27 @@ def tools_are_listed():
 
 
 @test
-def agent_pages_present_as_chrome_and_switch():
+def agent_pages_switch_to_chrome_where_turned_away():
+    # Safari by default: a Chrome user agent on WebKit trips bot checks (Google's).
     SEEN_AGENTS.pop("/article.html", None)
     open_page("article.html")
-    assert "Chrome/" in SEEN_AGENTS.get("/article.html", ""), SEEN_AGENTS
-    seen = page("return { ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map(b => b.brand), vendor: navigator.vendor }")
-    assert "Chrome/" in seen["ua"] and "Google Chrome" in seen["brands"] and seen["vendor"] == "Google Inc.", seen
+    assert "Version/" in SEEN_AGENTS.get("/article.html", "") and "Chrome/" not in SEEN_AGENTS["/article.html"], SEEN_AGENTS
+    # identity switches one page, client hints included, and back.
     try:
-        result = call("identity", {"as": "safari", "reload": True})
-        assert "Version/" in result["userAgent"] and "Chrome/" not in result["userAgent"], result
-        assert "Chrome/" not in SEEN_AGENTS["/article.html"], SEEN_AGENTS
-        assert page("return navigator.userAgentData === undefined || !navigator.userAgentData.brands"), "shim ran under Safari"
+        result = call("identity", {"as": "chrome", "reload": True})
+        assert "Chrome/" in result["userAgent"] and "Chrome/" in SEEN_AGENTS["/article.html"], (result, SEEN_AGENTS)
+        seen = page("return { brands: navigator.userAgentData?.brands?.map(b => b.brand), vendor: navigator.vendor }")
+        assert "Google Chrome" in seen["brands"] and seen["vendor"] == "Google Inc.", seen
     finally:
         call("identity", {"as": "default", "reload": True})
-    assert "Chrome/" in SEEN_AGENTS["/article.html"], SEEN_AGENTS
+    assert "Chrome/" not in SEEN_AGENTS["/article.html"], SEEN_AGENTS
+    assert page("return navigator.userAgentData === undefined || !navigator.userAgentData.brands"), "shim ran under Safari"
+    # A page that says the browser is not supported is opened again as Chrome (localhost, so what
+    # Harbor learns for that site leaves the other fixtures alone).
+    turned_away = BASE.replace("127.0.0.1", "localhost") + "/unsupported.html"
+    page_read = call("read", {"url": turned_away})
+    assert "Welcome to the app" in page_read["markdown"], page_read["markdown"][:200]
+    assert "Chrome/" in SEEN_AGENTS["/unsupported.html"], SEEN_AGENTS
 
 
 @test
@@ -228,6 +235,16 @@ def observe_lists_controls_with_stable_refs():
     assert not any(e["role"] == "label" for e in first), "labels of visible controls are not listed twice"
     again = {e["name"]: e["ref"] for e in call("observe")["elements"]}
     assert again["Save draft"] == by_name["Save draft"]["ref"], "refs stay the same"
+
+
+@test
+def shadow_dom_is_read_and_driven():
+    md = open_page("shadow.html")["markdown"]
+    for text in ["Slotted post title", "Light body text", "Shadow-only credit line"]:
+        assert text in md, md
+    vote = next(e for e in call("observe")["elements"] if e["name"] == "Upvote")
+    call("act", {"actions": [{"action": "click", "target": vote["ref"]}]})
+    assert page("return document.getElementById('clicked').textContent") == "voted true"
 
 
 @test
