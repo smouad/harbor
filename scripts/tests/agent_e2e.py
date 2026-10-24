@@ -31,7 +31,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "agent-fixtures")
 BUNDLE = os.environ.get("HARBOR_AGENT_BUNDLE", "com.mouad.harbor.agent")
 PORT = int(os.environ.get("HARBOR_AGENT_PORT", "47911"))
-FILES = os.environ.get("HARBOR_AGENT_FILES", "/tmp/harbor-agent-files")
+# Same folder agent-copy.sh gives the bundle.
+FILES = os.environ.get("HARBOR_AGENT_FILES", "/tmp/harbor-agent-files"
+                       + ("" if BUNDLE == "com.mouad.harbor.agent" else "-" + BUNDLE.rsplit(".", 1)[-1]))
 TOKEN = open(os.path.expanduser(f"~/Library/Application Support/{BUNDLE}/dev-mcp-token")).read().strip()
 
 
@@ -258,6 +260,12 @@ def scripts_wait_while_a_password_is_filled():
     assert "password" in acted.lower(), acted
     open_page("article.html")
     assert page("return 1") == 1, "a new page lets scripts run again"
+    # A show-password toggle turns the filled field into a text field: still a secret.
+    open_page("form.html")
+    page("const pw = document.querySelector('#pw'); pw.value = 'hunter2'; pw.type = 'text'; return true")
+    shown = call("evaluate", {"code": "return document.querySelector('#pw').value"}, expect_error=True)
+    assert "password" in shown.lower() and "hunter2" not in shown, shown
+    open_page("article.html")
 
 
 @test
@@ -346,6 +354,7 @@ def hover_applies_css_hover_styles():
 
 @test
 def dialogs_are_answered_and_logged():
+    call("dialogs", {"accept": False})  # what an earlier run may have left on
     open_page("form.html")
     call("act", {"actions": [{"action": "click", "target": "#dlg"}]})
     first = call("dialogs")
@@ -378,6 +387,13 @@ def upload_uses_the_page_picker():
         assert held.get("needs_approval") and outside in held["action"] and "127.0.0.1" in held["action"], held
     finally:
         os.remove(outside)
+    # A FIFO is refused at once rather than holding the copy open.
+    fifo = os.path.join(FILES, "uploads", "pipe")
+    if not os.path.exists(fifo):
+        os.mkfifo(fifo)
+    started = time.time()
+    text = call("upload", {"target": "input[type=file]", "files": ["uploads/pipe"]}, expect_error=True)
+    assert "not a file" in text and time.time() - started < 5, text
     # Never where keys and sign-ins live, however the path is written.
     for refused in ["~/.ssh/id_ed25519", "~/Library/Keychains/login.keychain-db", "/etc/hosts",
                     f"/.nofollow{os.path.expanduser('~')}/.zshrc", "~/Projects/app/.env"]:

@@ -76,6 +76,8 @@ enum AgentLinkedIn {
         let previous = queue
         let mine = Task { @MainActor in
             await previous?.value
+            // Cancelled while waiting its turn: load nothing.
+            try Task.checkCancellation()
             return try await work()
         }
         queue = Task { @MainActor in _ = try? await mine.value }

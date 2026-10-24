@@ -26,7 +26,16 @@ final class FocusableWKWebView: WKWebView, SessionWebView {
         contextMenuBridge = nil
     }
 
+    /// The event number AgentInput gives its synthetic presses. They go straight to WebKit: no
+    /// first responder or tab change (the person may be typing elsewhere), and no title-band drag,
+    /// whose wait for the real pointer to move or lift held the main thread until it did.
+    static let agentEventNumber = 0x4842_4147
+
     override func mouseDown(with event: NSEvent) {
+        if event.eventNumber == Self.agentEventNumber {
+            super.mouseDown(with: event)
+            return
+        }
         // Store Option key state for Peek functionality
         owningSession?.isOptionKeyDown = event.modifierFlags.contains(.option)
 

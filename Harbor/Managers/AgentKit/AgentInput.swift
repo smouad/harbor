@@ -230,7 +230,7 @@ enum AgentInput {
     private static func mouseEvent(_ window: NSWindow, type: NSEvent.EventType, at location: NSPoint, clickCount: Int) -> NSEvent? {
         NSEvent.mouseEvent(
             with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clickCount,
+            windowNumber: window.windowNumber, context: nil, eventNumber: FocusableWKWebView.agentEventNumber, clickCount: clickCount,
             pressure: type == .leftMouseDown ? 1 : 0)
     }
 

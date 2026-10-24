@@ -7,15 +7,20 @@
 # HARBOR_AGENT_TAB_ACCESS (off, ask or always; default always) sets how far agents reach into the
 # copy's own tabs, so agent_e2e.py can check each.
 #
-# The copy is com.mouad.harbor.agent on port 47911, so it never touches com.mouad.harbor.
+# The copy is com.mouad.harbor.agent on port 47911, so it never touches com.mouad.harbor. Each
+# bundle id gets its own app path and files folder, so two sessions running copies under different
+# bundle ids (and ports) never quit or overwrite each other's.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 bundle_id=${HARBOR_AGENT_BUNDLE:-com.mouad.harbor.agent}
 port=${HARBOR_AGENT_PORT:-47911}
-copy=/tmp/harbor-agent/Harbor.app
+suffix=""
+[ "$bundle_id" = com.mouad.harbor.agent ] || suffix="-${bundle_id##*.}"
+dir=/tmp/harbor-agent$suffix
+copy=$dir/Harbor.app
 # The copy has no Downloads access; its tool files live here instead of ~/Downloads/Harbor MCP.
-files=/tmp/harbor-agent-files
+files=${HARBOR_AGENT_FILES:-/tmp/harbor-agent-files$suffix}
 token_file="$HOME/Library/Application Support/$bundle_id/dev-mcp-token"
 
 # HARBOR_AGENT_CONFIG=Release checks the optimized build, which has crashed where Debug did not.
@@ -27,7 +32,7 @@ build() {
     xcodebuild -scheme Harbor -configuration "$config" -arch arm64 -derivedDataPath "$derived" \
         ENABLE_CODE_COVERAGE=NO CLANG_COVERAGE_MAPPING=NO \
         CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO -quiet
-    rm -rf /tmp/harbor-agent && mkdir -p /tmp/harbor-agent
+    rm -rf "$dir" && mkdir -p "$dir"
     ditto "$derived/Build/Products/$config/Harbor.app" "$copy"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$copy/Contents/Info.plist"
     codesign --force --deep --sign - --entitlements "$PWD/Harbor/Harbor-CI.entitlements" "$copy" 2>/dev/null

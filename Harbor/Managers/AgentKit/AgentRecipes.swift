@@ -436,7 +436,8 @@ enum AgentRecipeRunner {
         if runnable["timeout"] == nil, let timeout = run.recipe.defaults["timeout"] { runnable["timeout"] = timeout }
         let filled = AgentTemplate.fill(step, scopes: run.scopes) as? [String: Any] ?? step
         let pathKey = path.map { "\($0.index)\($0.branch)" }.joined(separator: "/")
-        if Self.targetsElement(filled), let healed = run.healedTargets[pathKey], (step["target"] as? String)?.contains("${") != true {
+        if Self.targetsElement(filled), let healed = run.healedTargets[pathKey], (step["target"] as? String)?.contains("${") != true,
+           await exists(healed, in: run.actions.webView, timeout: 1) {
             // Healed earlier in this run (a step in a loop): go straight to what worked.
             runnable["target"] = healed
         } else if Self.targetsElement(filled), let wanted = filled["target"] as? String {

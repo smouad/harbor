@@ -58,6 +58,9 @@ final class AgentCall {
     let webView: WKWebView?
     /// Every call answers within DevMCPServer's deadline; waits inside a tool share this budget.
     let deadline: Date
+    /// In one of the person's tabs under Ask, the site the person allowed: the call may not act on
+    /// or read another one.
+    var allowedSite: String?
 
     init(name: String, args: AgentArgs, browser: BrowserManager, window: BrowserWindowState,
          task: AgentTask?, session: PageSession?, webView: WKWebView?, budget: TimeInterval) {
@@ -242,7 +245,8 @@ enum AgentToolbox {
         // call still goes into that task's replay.
         let named = args.string("task").flatMap(AgentHub.shared.tasks.task)
         var webView: WKWebView?
-        let result: AgentResult
+        var allowedSite: String?
+        var result: AgentResult
         do {
             if tool.page == .agent, let id = args.string("task") {
                 guard let task = named else { throw AgentError.unknownTask(id) }
@@ -253,10 +257,13 @@ enum AgentToolbox {
             let session: PageSession?
             if tool.page == .agent, let tab = args.string("tab"), tab != "agent" {
                 if task != nil { throw AgentError.invalid("Pass task or tab, not both") }
-                switch try personTab(tab, browser: browser, window: window) {
-                case .ready(let item):
+                // A call that opens a page asks about that page's site.
+                let toward = args.string("url").flatMap(AgentURLs.web)
+                switch try personTab(tab, browser: browser, window: window, toward: toward) {
+                case .ready(let item, let site):
                     webView = try browser.borrowedWebView(item: item)
                     session = browser.tabs.session(for: item)
+                    allowedSite = site
                 case .needsApproval(let request):
                     return AgentResult.json(["ok": false, "needs_approval": request.id, "reason": request.reason,
                                              "action": request.action]).mcp
@@ -266,7 +273,12 @@ enum AgentToolbox {
             }
             let call = AgentCall(name: name, args: args, browser: browser, window: window,
                                  task: task, session: session, webView: webView, budget: budget)
+            call.allowedSite = allowedSite
             result = try await tool.run(call)
+            // The tab moved on to a site the person did not allow: what came from there stays here.
+            if let allowedSite, let webView, AgentURLs.site(of: webView.url) != allowedSite {
+                result = .error("The tab is now on \(AgentURLs.site(of: webView.url)); working there needs the person's OK. Call again with tab.")
+            }
         } catch {
             // A page tool's error may carry the page's own words (a script's exception).
             let message = "\(name) failed: \(error.agentMessage)"
@@ -280,12 +292,14 @@ enum AgentToolbox {
     }
 
     enum PersonTab {
-        case ready(UUID)
+        /// The tab, and under Ask the site the person allowed it for.
+        case ready(UUID, site: String?)
         case needsApproval(AgentApprovals.Request)
     }
 
     /// One of the person's own tabs, as the setting allows: refused, waiting for their OK, or ready.
-    static func personTab(_ reference: String, browser: BrowserManager, window: BrowserWindowState) throws -> PersonTab {
+    static func personTab(_ reference: String, browser: BrowserManager, window: BrowserWindowState,
+                          toward: URL? = nil) throws -> PersonTab {
         let tabs = browser.tabs
         let access = tabs.settings.agentTabAccess
         guard access != .off else {
@@ -306,15 +320,15 @@ enum AgentToolbox {
         // the agent's to drive.
         if tabs.isPrivateItem(item) { throw AgentError.invalid("Agents do not use private windows' tabs") }
         if let refusal = taskTabRefusal(item: item) { throw AgentError.invalid(refusal) }
-        guard access == .ask else { return .ready(item) }
+        guard access == .ask else { return .ready(item, site: nil) }
         let session = tabs.session(for: item)
         let title = session?.title ?? tabs.item(item)?.displayTitle ?? ""
-        let site = AgentURLs.site(of: session?.url)
+        let site = AgentURLs.site(of: toward ?? session?.url)
         // Allowed for this tab while it stays on this site: navigating elsewhere asks again.
         switch AgentHub.shared.approvals.personGate(
             fingerprint: "tab|\(item.uuidString)|\(site)", about: "Your tab", reason: "Works in one of your own tabs",
             action: "Use your tab on \(site.isEmpty ? "this page" : site) (\"\(title.prefix(60))\")") {
-        case .allowed: return .ready(item)
+        case .allowed: return .ready(item, site: site)
         case .needsApproval(let request): return .needsApproval(request)
         case .refused(let why): throw AgentError.invalid(why)
         }

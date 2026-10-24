@@ -307,8 +307,11 @@ struct WebsiteView: View {
             }
 
             // Approvals, handoffs and recordings in every window; the task list in the Agent space.
-            AgentOverlay()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            // An overlay on a clear view, so however many cards there are they never size the
+            // window (a stack of them once made it taller than the screen); past the bottom they clip.
+            Color.clear
+                .overlay(alignment: .topTrailing) { AgentOverlay() }
+                .clipped()
         }
     }
 

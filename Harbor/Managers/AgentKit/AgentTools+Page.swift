@@ -55,6 +55,7 @@ extension AgentToolbox {
         let webView = try call.page()
         guard let steps = call.args.objects("actions"), !steps.isEmpty else { throw AgentError.invalid("actions must be a list of steps") }
         let actions = AgentActions(webView: webView, task: call.task, deadline: call.deadline.addingTimeInterval(-1))
+        actions.allowedSite = call.allowedSite
         let continueOnError = call.args.bool("continueOnError") ?? false
         var results: [[String: Any]] = []
         var ok = true
@@ -222,7 +223,7 @@ extension AgentToolbox {
             case .refused(let why): throw AgentError.invalid(why)
             }
         }
-        let staged = try await AgentUploads.stage(files)
+        let staged = try await AgentUploads.stage(files, approved: Set(outside.map(\.path)))
         guard let ref else {
             let dropped = try await AgentRuntime.object(
                 "dropFiles", ["target": target, "files": try await AgentUploads.dropPayload(staged)], in: webView)

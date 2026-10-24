@@ -21,8 +21,15 @@ enum AgentUploads {
 
     /// Whether `url` is outside the Browser Control folder, so uploading it needs the person's OK.
     static func isOutsideRoot(_ url: URL) -> Bool {
-        let root = DevMCPFiles.root.standardizedFileURL.resolvingSymlinksInPath().path + "/"
-        return !url.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(root)
+        !real(url.path).hasPrefix(real(DevMCPFiles.root.path) + "/")
+    }
+
+    /// The path the kernel resolves, as F_GETPATH reports it (`resolvingSymlinksInPath` drops
+    /// /private from /tmp and /var, F_GETPATH keeps it); the path itself when it does not exist.
+    nonisolated static func real(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     /// The file `path` names, or why it may not be uploaded. The copy checks again on the opened file.
@@ -40,52 +47,73 @@ enum AgentUploads {
         return url
     }
 
-    /// Copies of `sources` in Harbor's folder, in order.
+    /// Copies of `sources` in Harbor's folder, in order. A file outside the Browser Control folder
+    /// must be one of `approved` (paths the person saw), checked again on the opened file.
     @MainActor
-    static func stage(_ sources: [URL]) async throws -> [URL] {
+    static func stage(_ sources: [URL], approved: Set<String> = []) async throws -> [URL] {
+        let root = real(DevMCPFiles.root.path) + "/"
+        let allowed = Set(approved.map { real($0).lowercased() })
         do {
             return try await AgentDeadline.throwing(60) {
-                try await Task.detached(priority: .userInitiated) { try copy(sources) }.value
+                let work = Task.detached(priority: .userInitiated) { try copy(sources, root: root, approved: allowed) }
+                return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
             }
         } catch is AgentDeadline.Expired {
             throw AgentError.invalid("Reading the files took too long; macOS may be asking whether Harbor can open that folder. Answer the prompt and try again.")
         }
     }
 
-    private nonisolated static func copy(_ sources: [URL]) throws -> [URL] {
+    private nonisolated static func copy(_ sources: [URL], root: String, approved: Set<String>) throws -> [URL] {
         let fm = FileManager.default
         prune()
         let batch = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        return try sources.enumerated().map { index, source in
-            // Open first, then judge the path the kernel has for the open file and copy from that
-            // same descriptor: a path prefix or a link swapped in after the check changes nothing.
-            let fd = open(source.path, O_RDONLY)
-            guard fd >= 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
-            defer { close(fd) }
-            var info = stat()
-            guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
-                throw AgentError.invalid("\(source.path) is not a file")
+        do {
+            return try sources.enumerated().map { index, source in
+                try Task.checkCancellation()
+                return try copyOne(source, into: batch.appendingPathComponent(String(index), isDirectory: true),
+                                   root: root, approved: approved)
             }
-            var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-            guard fcntl(fd, F_GETPATH, &buffer) == 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
-            let real = String(cString: buffer)
-            if let why = AgentUploadPaths.refusal(real, home: NSHomeDirectory()) {
-                throw AgentError.invalid("Harbor does not upload \(source.path): \(why)")
-            }
-            // One folder per file keeps two files of the same name apart.
-            let into = batch.appendingPathComponent(String(index), isDirectory: true)
-            try fm.createDirectory(at: into, withIntermediateDirectories: true)
-            let copy = into.appendingPathComponent(URL(fileURLWithPath: real).lastPathComponent)
-            guard fm.createFile(atPath: copy.path, contents: nil), let out = FileHandle(forWritingAtPath: copy.path) else {
-                throw AgentError.invalid("Could not stage \(source.lastPathComponent)")
-            }
-            defer { try? out.close() }
-            let input = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-            while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
-                try out.write(contentsOf: chunk)
-            }
-            return copy
+        } catch {
+            try? fm.removeItem(at: batch)
+            throw error
         }
+    }
+
+    /// Opens first, then judges the path the kernel has for the open file and copies from that
+    /// same descriptor: a path prefix or a link swapped in after the check changes nothing.
+    private nonisolated static func copyOne(_ source: URL, into: URL, root: String, approved: Set<String>) throws -> URL {
+        // Non-blocking, so a FIFO cannot hold the open; regular files only past fstat.
+        let fd = open(source.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            throw AgentError.invalid("\(source.path) is not a file")
+        }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(fd, F_GETPATH, &buffer) == 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
+        let real = String(cString: buffer)
+        if let why = AgentUploadPaths.refusal(real, home: NSHomeDirectory()) {
+            throw AgentError.invalid("Harbor does not upload \(source.path): \(why)")
+        }
+        let inRoot = real.hasPrefix(root)
+        guard inRoot || approved.contains(real.lowercased()) else {
+            throw AgentError.invalid("\(source.path) is not the file the person approved")
+        }
+        // A second name for a file elsewhere makes the path say nothing about it.
+        if !inRoot, info.st_nlink > 1 { throw AgentError.invalid("\(source.path) has other links; copy it to upload it") }
+        try FileManager.default.createDirectory(at: into, withIntermediateDirectories: true)
+        let copy = into.appendingPathComponent(source.lastPathComponent)
+        // A clone on the same volume costs nothing; elsewhere copy the data.
+        if fclonefileat(fd, AT_FDCWD, copy.path, 0) != 0 {
+            let out = open(copy.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+            guard out >= 0 else { throw AgentError.invalid("Could not stage \(source.lastPathComponent)") }
+            defer { close(out) }
+            guard fcopyfile(fd, out, nil, copyfile_flags_t(COPYFILE_DATA)) == 0 else {
+                throw AgentError.invalid("Could not copy \(source.lastPathComponent)")
+            }
+        }
+        return copy
     }
 
     private nonisolated static func prune() {

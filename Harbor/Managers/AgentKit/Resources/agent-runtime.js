@@ -29,6 +29,17 @@
     const secretFields = new WeakSet();
     let secretTyped = false;
 
+    // A "show password" toggle turns a filled password field into a text field; the value is
+    // still a secret, whoever filled it (a password manager extension, say).
+    new MutationObserver(records => {
+        for (const r of records) {
+            if (r.oldValue === "password" && r.target.type !== "password" && r.target.value) {
+                secretFields.add(r.target);
+                secretTyped = true;
+            }
+        }
+    }).observe(document, { attributes: true, attributeFilter: ["type"], attributeOldValue: true, subtree: true });
+
     function elementForRef(ref) {
         const el = byRef.get(ref)?.deref();
         return el && el.isConnected ? el : null;

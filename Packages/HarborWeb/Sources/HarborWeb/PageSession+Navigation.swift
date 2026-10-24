@@ -49,6 +49,8 @@ extension PageSession: WKNavigationDelegate {
         didCommit navigation: WKNavigation!
     ) {
         loadingState = .didCommit
+        // A redirect chain ends here; the next visit to one of its URLs may switch again.
+        userAgentRestarts.removeAll()
         pdfLoadStateChanged(webView)
         if unloadSnapshot != nil {
             // Commit comes just before the page's first paint; a beat later it has drawn.

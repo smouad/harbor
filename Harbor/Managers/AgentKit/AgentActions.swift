@@ -36,6 +36,8 @@ final class AgentActions {
     var vars: [String: Any]
     /// Other names a step reads besides `vars`: a recipe run's `input` and a `foreach` item.
     var scopes: [String: Any] = [:]
+    /// In one of the person's tabs under Ask, the only site steps may act on or go to.
+    var allowedSite: String?
     /// Where the pointer was left, so a `human` move starts from there.
     private var lastPointer = CGPoint(x: 40, y: 40)
 
@@ -68,6 +70,13 @@ final class AgentActions {
         }
         let step = AgentTemplate.fill(raw, scopes: scopes.merging(["vars": vars]) { _, own in own }) as? [String: Any] ?? raw
         guard let action = step["action"] as? String else { throw StepError.invalid("Each step needs an action") }
+        if let allowedSite {
+            let here = AgentURLs.site(of: webView.url)
+            let going = action == "navigate" ? (step["url"] as? String).flatMap(AgentURLs.web).map { AgentURLs.site(of: $0) } : nil
+            if here != allowedSite || (going != nil && going != allowedSite) {
+                throw StepError.invalid("The person allowed this tab on \(allowedSite) only; another site needs their OK (call again with tab)")
+            }
+        }
         let target = step["target"] as? String
         let native = (step["input"] as? String).map { $0 == "native" } ?? Self.nativeByDefault.contains(action)
 
@@ -502,7 +511,8 @@ enum AgentHoverSheets {
         config.timeoutIntervalForResource = 3
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
-        let session = URLSession(configuration: config)
+        // No redirects: the final host would only be checked after the request reached it.
+        let session = URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         // The page's origin only, as a browser sends to another site.
         let referer = page.flatMap { url in url.host.map { "\(url.scheme ?? "https")://\($0)/" } }
@@ -556,16 +566,25 @@ enum AgentHoverSheets {
         }.value
     }
 
+    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest) async -> URLRequest? { nil }
+    }
+
+    private static func publicV4(_ a: UInt32, _ b: UInt32) -> Bool {
+        #if DEBUG
+        // agent_e2e.py serves its cross-origin stylesheet from 127.0.0.1; Release never fetches it.
+        if a == 127 { return true }
+        #endif
+        return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b))
+                 || (a == 192 && b == 168) || (a == 100 && (64...127).contains(b)) || (a == 198 && (18...19).contains(b))
+                 || a >= 224)
+    }
+
     private static func publicAddress(_ address: UnsafeMutablePointer<sockaddr>) -> Bool {
         if address.pointee.sa_family == sa_family_t(AF_INET) {
             let v4 = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt32(bigEndian: $0.pointee.sin_addr.s_addr) }
-            let a = v4 >> 24, b = (v4 >> 16) & 0xff
-            #if DEBUG
-            // agent_e2e.py serves its cross-origin stylesheet from 127.0.0.1; Release never fetches it.
-            if a == 127 { return true }
-            #endif
-            return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b))
-                     || (a == 192 && b == 168) || (a == 100 && (64...127).contains(b)) || a >= 224)
+            return publicV4(v4 >> 24, (v4 >> 16) & 0xff)
         }
         if address.pointee.sa_family == sa_family_t(AF_INET6) {
             let bytes = address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { pointer in
@@ -575,11 +594,14 @@ enum AgentHoverSheets {
             let linkLocal = bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80
             let uniqueLocal = (bytes[0] & 0xfe) == 0xfc
             let mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
-            if mapped {
-                let a = bytes[12], b = bytes[13]
-                return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168))
+            // ::ffff:a.b.c.d, ::a.b.c.d and NAT64 64:ff9b::a.b.c.d carry an IPv4 address.
+            let compatible = bytes[0..<12].allSatisfy { $0 == 0 }
+            let nat64 = bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b && bytes[4..<12].allSatisfy { $0 == 0 }
+            if mapped || (compatible && !loopback && !bytes.allSatisfy { $0 == 0 }) || nat64 {
+                return publicV4(UInt32(bytes[12]), UInt32(bytes[13]))
             }
-            return !(loopback || linkLocal || uniqueLocal || bytes.allSatisfy { $0 == 0 })
+            let multicast = bytes[0] == 0xff
+            return !(loopback || linkLocal || uniqueLocal || multicast || bytes.allSatisfy { $0 == 0 })
         }
         return false
     }
