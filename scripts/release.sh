@@ -82,6 +82,8 @@ fi
 [ -z "$(git status --porcelain --untracked-files=no)" ] || echo "Warning: uncommitted changes are in this build; the tag marks HEAD without them" >&2
 git tag -a "$tag" -m "Harbor $version"
 git push origin "$tag"
+notes_flag=(--generate-notes)
+[ -z "$notes" ] || notes_flag=(--notes-file "$notes")
 gh release create "$tag" "$dist/$zip" "$dist/appcast.xml" --repo "$repo" --verify-tag \
-    --title "Harbor $version" ${notes:+--notes-file "$notes"} ${notes:---generate-notes}
+    --title "Harbor $version" "${notes_flag[@]}"
 echo "Published https://github.com/$repo/releases/tag/$tag"
