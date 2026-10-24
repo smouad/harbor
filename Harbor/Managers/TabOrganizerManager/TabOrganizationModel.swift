@@ -54,7 +54,7 @@ enum TabOrganizationModel {
         }
     }
 
-    private static let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+    private static var model: SystemLanguageModel { OnDeviceModel.shared }
     /// Greedy decoding (temperature 0 alone still varied run to run), with a response cap sized to the entry count as a backstop against a runaway.
     private static func options(for entries: Int) -> GenerationOptions {
         // `sampling:` is deprecated in the 27 SDK, but its replacement `samplingMode:` exists only there.

@@ -42,7 +42,7 @@ struct AppleIntelligenceProvider: AIProviderProtocol {
         "getSelectedText", "getTabList", "switchTab", "createTab",
     ]
 
-    private static let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+    private static var model: SystemLanguageModel { OnDeviceModel.shared }
 
     /// Whether the person's own message names what an opening or clicking tool is aimed at. The model
     /// followed instructions planted in page text on every eval run, whatever the prompt said, so a
