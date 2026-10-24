@@ -334,8 +334,12 @@ def hover_applies_css_hover_styles():
         call("act", {"actions": [{"action": "hover", "target": "#hover-target"}]})
         assert page(outline) == "rgb(255, 0, 0)", page(outline)
         call("act", {"actions": [{"action": "hover", "target": "#save"}]})
-        assert page(background) == "rgb(0, 128, 0)", "a :hover rule from another origin's stylesheet applies"
         assert page(outline) != "rgb(255, 0, 0)", "the first element is no longer hovered"
+        if os.environ.get("HARBOR_AGENT_CONFIG") == "Release":
+            # Release fetches stylesheets from public hosts only, never 127.0.0.1.
+            assert page(background) != "rgb(0, 128, 0)", "Release fetched a stylesheet from this Mac"
+            return
+        assert page(background) == "rgb(0, 128, 0)", "a :hover rule from another origin's stylesheet applies"
     finally:
         other.shutdown()
 
