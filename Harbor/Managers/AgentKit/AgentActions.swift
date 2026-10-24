@@ -145,9 +145,13 @@ final class AgentActions {
                 lastPointer = CGPoint(x: x, y: y)
                 await AgentInput.afterPendingMouseEvents(webView)
             }
-            // WebKit drops pointer moves for a page in the hidden host, so hover menus also get
-            // the DOM's pointer events.
-            _ = try await runtime("hover", target.map { ["target": $0] } ?? ["x": x, "y": y])
+            // WebKit takes no pointer moves while Harbor is in the background, so hover menus also
+            // get the DOM's pointer events, and :hover styles are applied by the runtime.
+            let hovered = try await runtime("hover", target.map { ["target": $0] } ?? ["x": x, "y": y]) as? [String: Any]
+            if let missing = hovered?["missingSheets"] as? [String], !missing.isEmpty {
+                let sheets = await AgentHoverSheets.fetch(missing, from: webView.url)
+                _ = try await runtime("hoverSheets", ["sheets": sheets])
+            }
             return nil
 
         case "focus", "scrollIntoView", "submit":
@@ -451,5 +455,32 @@ enum AgentURLs {
         guard let url = URL(string: string), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+/// Stylesheets from another origin, for hover styles: the page loaded them, but its script cannot
+/// read their rules. Fetched without cookies, at most 2 MB each and 3 s for all.
+enum AgentHoverSheets {
+    static func fetch(_ hrefs: [String], from page: URL?) async -> [String: String] {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3
+        config.httpCookieStorage = nil
+        let session = URLSession(configuration: config)
+        defer { session.finishTasksAndInvalidate() }
+        return await withTaskGroup(of: (String, String).self) { group in
+            for href in hrefs {
+                group.addTask {
+                    guard let url = URL(string: href), url.scheme == "https" || url.scheme == "http" else { return (href, "") }
+                    var request = URLRequest(url: url)
+                    if let page { request.setValue(page.absoluteString, forHTTPHeaderField: "Referer") }
+                    guard let (data, response) = try? await session.data(for: request),
+                          (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 << 20 else { return (href, "") }
+                    return (href, String(decoding: data, as: UTF8.self))
+                }
+            }
+            var out: [String: String] = [:]
+            for await (href, text) in group { out[href] = text }
+            return out
+        }
     }
 }

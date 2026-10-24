@@ -293,6 +293,24 @@ def hover_reaches_script_handlers():
 
 
 @test
+def hover_applies_css_hover_styles():
+    open_page("form.html")
+    other, other_base = serve_fixtures()
+    try:
+        page(f"const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '{other_base}/hover.css';"
+             " document.head.append(link); await new Promise(r => { link.onload = r; link.onerror = r; }); return true")
+        outline = "return getComputedStyle(document.querySelector('#hover-target')).outlineColor"
+        background = "return getComputedStyle(document.querySelector('#save')).backgroundColor"
+        call("act", {"actions": [{"action": "hover", "target": "#hover-target"}]})
+        assert page(outline) == "rgb(255, 0, 0)", page(outline)
+        call("act", {"actions": [{"action": "hover", "target": "#save"}]})
+        assert page(background) == "rgb(0, 128, 0)", "a :hover rule from another origin's stylesheet applies"
+        assert page(outline) != "rgb(255, 0, 0)", "the first element is no longer hovered"
+    finally:
+        other.shutdown()
+
+
+@test
 def dialogs_are_answered_and_logged():
     open_page("form.html")
     call("act", {"actions": [{"action": "click", "target": "#dlg"}]})
@@ -600,6 +618,33 @@ def watches_and_schedules():
         call("recipe_delete", {"name": "e2e-sched"})
     finally:
         open(path, "w").write(original)
+
+
+@test
+def schedules_fire_on_their_own():
+    """Up to two minutes: a schedule for the next minute, and a new watch's first check."""
+    if not os.environ.get("HARBOR_E2E_SLOW"):
+        raise Skip("slow; set HARBOR_E2E_SLOW=1")
+    call("recipe_save", {"recipe": {"name": "e2e-fire", "steps": [{"action": "navigate", "url": f"{BASE}/article.html"}]}})
+    watch = None
+    schedule = None
+    try:
+        watch = call("watch", {"url": f"{BASE}/watch.html", "selector": "body", "every": 60})["id"]
+        at = time.strftime("%H:%M", time.localtime(time.time() + 60))
+        schedule = call("schedule", {"recipe": "e2e-fire", "at": at})["id"]
+        deadline = time.time() + 150
+        kinds = set()
+        while time.time() < deadline and not {"watch", "recipe"} <= kinds:
+            kinds = {j["kind"] for j in call("jobs") if j["title"] in ("e2e-fire", f"{BASE}/watch.html") or j["kind"] == "watch"}
+            time.sleep(5)
+        assert {"watch", "recipe"} <= kinds, f"the scheduler started {kinds or 'nothing'}"
+        run = next(j for j in call("jobs") if j["kind"] == "recipe" and j["title"] == "e2e-fire")
+        assert wait_job(run["job"])["state"] == "done"
+    finally:
+        for item in [watch, schedule]:
+            if item:
+                call("unschedule", {"id": item})
+        call("recipe_delete", {"name": "e2e-fire"})
 
 
 @test

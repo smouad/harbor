@@ -348,6 +348,78 @@
 
     let hovered = null;
 
+    // MARK: - Hover styles
+
+    // CSS :hover follows only a real pointer, and WebKit takes no pointer moves while Harbor is in
+    // the background, which is where agents work. So the page's :hover rules are copied with :hover
+    // written as an attribute, which the hovered element and its ancestors carry until the pointer
+    // moves on. Stylesheets from another origin cannot be read here; Harbor fetches those itself
+    // (hoverSheets). The copies come last, so on a tie a :hover rule beats one that followed it.
+    const HOVER_ATTR = "data-harbor-hover";
+    const fetchedSheets = new Map();   // href -> CSS text ("" when it could not be fetched)
+
+    function hoverRules(rules, out, missing) {
+        for (const rule of rules) {
+            if (rule instanceof CSSImportRule) {
+                if (rule.styleSheet) sheetHoverRules(rule.styleSheet, out, missing, rule.media?.mediaText);
+            } else if (rule instanceof CSSStyleRule) {
+                if (rule.selectorText.includes(":hover")) {
+                    out.push(rule.cssText.replace(/:hover\b/g, `[${HOVER_ATTR}]`));
+                } else if (rule.cssRules?.length) {
+                    // CSS nesting: a parent rule whose children hover.
+                    const inner = [];
+                    hoverRules(rule.cssRules, inner, missing);
+                    if (inner.length) out.push(`${rule.selectorText} { ${inner.join("\n")} }`);
+                }
+            } else if (rule.cssRules) {
+                // @media, @supports, @layer, @container: keep the condition around the copies.
+                const inner = [];
+                hoverRules(rule.cssRules, inner, missing);
+                if (inner.length) out.push(`${rule.cssText.slice(0, rule.cssText.indexOf("{"))} { ${inner.join("\n")} }`);
+            }
+        }
+    }
+
+    function sheetHoverRules(sheet, out, missing, media) {
+        let rules;
+        try { rules = sheet.cssRules; } catch { rules = null; }
+        if (!rules && sheet.href) {
+            const text = fetchedSheets.get(sheet.href);
+            if (text === undefined) { missing.push(sheet.href); return; }
+            if (!text) return;
+            try { const parsed = new CSSStyleSheet(); parsed.replaceSync(text); rules = parsed.cssRules; } catch { return; }
+        }
+        if (!rules) return;
+        const inner = [];
+        hoverRules(rules, inner, missing);
+        if (!inner.length) return;
+        out.push(media ? `@media ${media} { ${inner.join("\n")} }` : inner.join("\n"));
+    }
+
+    /** Marks `el` and its ancestors hovered; returns stylesheets Harbor should fetch first. */
+    function applyHoverStyles(el) {
+        for (const old of document.querySelectorAll(`[${HOVER_ATTR}]`)) old.removeAttribute(HOVER_ATTR);
+        const out = [], missing = [];
+        for (const sheet of [...document.styleSheets, ...(document.adoptedStyleSheets || [])]) {
+            if (sheet.ownerNode?.dataset?.harborHoverStyles !== undefined) continue;
+            sheetHoverRules(sheet, out, missing);
+        }
+        let style = document.querySelector("style[data-harbor-hover-styles]");
+        if (!style) {
+            style = document.createElement("style");
+            style.dataset.harborHoverStyles = "";
+            (document.head || document.documentElement).append(style);
+        } else if (style.nextElementSibling) {
+            // Stay last, after stylesheets the page added since.
+            style.parentNode.append(style);
+        }
+        style.textContent = out.join("\n");
+        for (let node = el; node; node = node.parentElement || node.getRootNode?.().host) {
+            if (node.nodeType === 1) node.setAttribute(HOVER_ATTR, "");
+        }
+        return [...new Set(missing)].slice(0, 8);
+    }
+
     function domClick(el) {
         const r = el.getBoundingClientRect();
         const opts = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
@@ -451,7 +523,7 @@
             return checkedState(el);
         },
         focus: ({ target }) => { focusEditable(need(target)); return true; },
-        // Pointer events for hover menus driven by script. CSS :hover follows only a real pointer.
+        // Pointer events for hover menus driven by script, and the page's :hover styles.
         hover: ({ target, x, y }) => {
             let el = target ? need(target) : document.elementFromPoint(x, y);
             if (!el) return false;
@@ -469,6 +541,13 @@
                 el.dispatchEvent(new Ctor(type, { bubbles: !type.endsWith("enter"), composed: true, ...at }));
             }
             hovered = new WeakRef(el);
+            return { missingSheets: applyHoverStyles(el) };
+        },
+        // Stylesheets Harbor fetched for hover styles: {href: text}, "" for one it could not get.
+        hoverSheets: ({ sheets }) => {
+            for (const [href, text] of Object.entries(sheets)) fetchedSheets.set(href, text);
+            const el = hovered?.deref();
+            if (el?.isConnected) applyHoverStyles(el);
             return true;
         },
         scrollIntoView: ({ target }) => { need(target).scrollIntoView({ block: "center", behavior: "instant" }); return true; },
