@@ -285,7 +285,7 @@ public final class HarborSettingsService {
         didSet { userDefaults.set(agentExtensionsEnabled, forKey: agentExtensionsKey) }
     }
 
-    /// Agent pages tell sites they are Chrome, so a site that turns Safari away lets them in.
+    /// Agent pages switch to presenting as Chrome on a site that says the browser is not supported.
     public var agentPresentsAsChrome: Bool {
         didSet { userDefaults.set(agentPresentsAsChrome, forKey: agentPresentsAsChromeKey) }
     }
