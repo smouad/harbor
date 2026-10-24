@@ -18,7 +18,23 @@ struct AgentPolicyCheck {
         templates()
         uploadPaths()
         expressions()
+        linkedInVolume()
         print("AgentPolicyCheck passed")
+    }
+
+    static func linkedInVolume() {
+        let file = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("li-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let usage = AgentLinkedInUsage(file: file)
+        for i in 0..<10 { try! usage.claim(.search, now: start.addingTimeInterval(Double(i))) }
+        precondition((try? usage.claim(.search, now: start.addingTimeInterval(60))) == nil, "the 11th search in an hour is refused")
+        try! usage.claim(.profile, now: start.addingTimeInterval(60))
+        precondition((try? usage.claim(.search, now: start.addingTimeInterval(3_601))) != nil, "an hour later searches are allowed again")
+        let reloaded = AgentLinkedInUsage(file: file)
+        for i in 0..<29 { try! reloaded.claim(.profile, now: start.addingTimeInterval(4_000 + Double(i))) }
+        precondition((try? reloaded.claim(.profile, now: start.addingTimeInterval(5_000))) == nil, "30 profiles a day, counted across launches")
+        precondition((try? reloaded.claim(.profile, now: start.addingTimeInterval(86_500))) != nil, "a day later profiles are allowed again")
     }
 
     static func expressions() {

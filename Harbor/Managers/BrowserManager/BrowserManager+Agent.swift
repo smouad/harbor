@@ -56,6 +56,19 @@ extension BrowserManager {
         return view
     }
 
+    /// Starts recording a recipe from the person's use of the active window's tab; the recording
+    /// card names it and saves it.
+    func recordRecipeInCurrentTab() {
+        guard let session = tabs.activeWindowSession, let webView = session.webView else { return }
+        Task { @MainActor in
+            do {
+                try await AgentHub.shared.recorder.start(in: webView, subject: session.title)
+            } catch {
+                showDevToast(error.agentMessage)
+            }
+        }
+    }
+
     /// One of the person's own tabs, loaded and in a window, for an agent the person let work there
     /// (Settings > Developer). A tab a window shows is used where it is; one no window shows goes
     /// into the hidden host like an agent page, until the person opens it or it goes idle.

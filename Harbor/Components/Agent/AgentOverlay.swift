@@ -5,7 +5,8 @@
 //
 //  The agent's cards over the page. In every window: actions waiting for the person's approval,
 //  tasks that handed the person a step, and a recording in progress. In the Agent space, also the
-//  task list: each task's status and note, with watch, take over or hand back, replay and stop.
+//  task list: each task's status and note, with watch, take over or hand back, replay and stop;
+//  and the saved recipes, each with Run (or Stop) and how its last run went.
 //
 
 import SwiftUI
@@ -35,6 +36,9 @@ struct AgentOverlay: View {
             }
             if showsAgentSpace, !hub.tasks.all.isEmpty {
                 AgentTasksCard(window: windowState)
+            }
+            if showsAgentSpace, !hub.recipes.all.isEmpty, !hub.recorder.isRecording {
+                AgentRecipesCard()
             }
         }
         .frame(maxWidth: Self.cardWidth, alignment: .trailing)
@@ -233,6 +237,93 @@ private struct AgentTaskRow: View {
         case .failed(let summary): return summary ?? "Failed"
         case .stopped: return "Stopped"
         case .running: return task.note ?? "\(task.steps) \(task.steps == 1 ? "step" : "steps")"
+        }
+    }
+}
+
+// MARK: - Recipes
+
+private struct AgentRecipesCard: View {
+    private let hub = AgentHub.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: HarborDesign.Spacing.xs) {
+            Text("Recipes")
+                .font(HarborDesign.Font.captionStrong)
+                .foregroundStyle(.secondary)
+                .padding(.leading, HarborDesign.Spacing.md)
+                .padding(.top, HarborDesign.Spacing.xs)
+            ForEach(hub.recipes.all.prefix(Self.maxRows), id: \.name) { recipe in
+                AgentRecipeRow(recipe: recipe)
+            }
+        }
+        .padding(HarborDesign.Spacing.xs)
+        .harborFloatingSurface(in: HarborDesign.Radius.shape(HarborDesign.Radius.lg))
+    }
+
+    static let maxRows = 6
+}
+
+private struct AgentRecipeRow: View {
+    let recipe: AgentRecipe
+    @State private var error: String?
+    private let hub = AgentHub.shared
+
+    /// This recipe's latest run.
+    private var job: AgentJob? {
+        hub.jobs.all.last { $0.kind == "recipe" && $0.title == recipe.name }
+    }
+
+    var body: some View {
+        HStack(spacing: HarborDesign.Spacing.md) {
+            VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                Text(recipe.name)
+                    .font(HarborDesign.Font.body)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(job?.state == .failed || error != nil ? AnyShapeStyle(HarborDesign.Surface.danger) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: HarborDesign.Spacing.xxs) {
+                if let job, !job.state.isFinal {
+                    Button { hub.jobs.cancel(job) } label: { Image(systemName: "stop.fill") }
+                        .help("Stop")
+                        .accessibilityLabel("Stop \(recipe.name)")
+                } else {
+                    Button(action: run) { Image(systemName: "play.fill") }
+                        .help("Run")
+                        .accessibilityLabel("Run \(recipe.name)")
+                }
+            }
+            .harborIconButtons()
+        }
+        .padding(.horizontal, HarborDesign.Spacing.md)
+        .padding(.vertical, HarborDesign.Spacing.sm)
+    }
+
+    private func run() {
+        do {
+            error = nil
+            _ = try AgentRecipeRunner.start(name: recipe.name, vars: [:], task: nil)
+        } catch {
+            self.error = error.agentMessage
+        }
+    }
+
+    private var subtitle: String {
+        if let error { return error }
+        guard let job else {
+            let sites = recipe.sites.joined(separator: ", ")
+            return sites.isEmpty ? "\(recipe.steps.count) steps" : sites
+        }
+        switch job.state {
+        case .running: return job.message ?? "Running"
+        case .needsRepair: return "Needs a new target for a step; an agent can fix it"
+        case .done: return "Done"
+        case .failed: return job.error ?? "Failed"
+        case .cancelled: return "Stopped"
         }
     }
 }

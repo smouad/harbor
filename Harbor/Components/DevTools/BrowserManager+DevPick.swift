@@ -46,7 +46,7 @@ extension BrowserManager {
         if windowState.isSidebarAIChatVisible { windowState.devPanelTab = .agent }
     }
 
-    private func showDevToast(_ text: String) {
+    func showDevToast(_ text: String) {
         guard let windowState = windowRegistry?.activeWindow else { return }
         windowState.copyToastText = text
         windowState.isShowingCopyURLToast = true

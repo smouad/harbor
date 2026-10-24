@@ -222,6 +222,47 @@ enum AgentUploadPaths {
     ]
 }
 
+// MARK: - LinkedIn volume
+
+/// How many LinkedIn searches and profiles agents used recently, kept across launches. Low volume
+/// is what keeps an account safe, so past a cap the request is refused, never slowed down.
+final class AgentLinkedInUsage {
+    enum Kind: String { case search, profile }
+
+    struct Refusal: LocalizedError {
+        let errorDescription: String?
+    }
+
+    static let profilesPerDay = 30
+    static let searchesPerHour = 10
+
+    private let file: URL
+    private var events: [(kind: Kind, at: Date)] = []
+
+    init(file: URL) {
+        self.file = file
+        let saved = (try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        events = saved.compactMap { entry in
+            guard let kind = (entry["kind"] as? String).flatMap(Kind.init), let at = entry["at"] as? Double else { return nil }
+            return (kind, Date(timeIntervalSince1970: at))
+        }
+    }
+
+    /// Counts one use, or refuses when it would pass the cap.
+    func claim(_ kind: Kind, now: Date = Date()) throws {
+        let (limit, window, span) = kind == .profile
+            ? (Self.profilesPerDay, 86_400.0, "day") : (Self.searchesPerHour, 3_600.0, "hour")
+        let used = events.filter { $0.kind == kind && now.timeIntervalSince($0.at) < window }.count
+        guard used < limit else {
+            throw Refusal(errorDescription: "LinkedIn \(kind.rawValue) limit reached (\(used) of \(limit) a \(span)). It protects the person's account; try again later.")
+        }
+        events.append((kind, now))
+        events.removeAll { now.timeIntervalSince($0.at) > 86_400 }
+        let json = events.map { ["kind": $0.kind.rawValue, "at": $0.at.timeIntervalSince1970] }
+        if let data = try? JSONSerialization.data(withJSONObject: json) { try? data.write(to: file, options: .atomic) }
+    }
+}
+
 // MARK: - Templates
 
 /// `${vars.name}`, `${input.x.y}` in recipe and act steps, read from named scopes. A string that is

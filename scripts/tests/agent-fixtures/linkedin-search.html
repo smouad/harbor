@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Search | LinkedIn</title></head><body>
+<!-- Shaped like LinkedIn's 2024+ people search: hashed classes, each result an <a href="/in/…"> around
+     <p> blocks with the name's own link inside. A link inside a link only exists when script builds
+     it, as LinkedIn's does; the HTML parser would split it. -->
+<aside><div role="list"><a href="/in/sidebar-person/">Sidebar</a></div></aside>
+<main><div role="list" id="results"></div></main>
+<button aria-label="Next">Next</button>
+<script>
+  const card = (href, name, degree, lines) => {
+    const outer = document.createElement("a");
+    outer.className = "x1a";
+    outer.href = href;
+    const box = document.createElement("div");
+    const first = document.createElement("p");
+    const inner = document.createElement("a");
+    inner.href = new URL(href, location.href).pathname;
+    inner.textContent = name;
+    first.append(inner, ` • ${degree}`);
+    box.append(first, ...lines.map(text => Object.assign(document.createElement("p"), { textContent: text })));
+    outer.append(box);
+    const wrap = document.createElement("div");
+    wrap.append(outer);
+    document.getElementById("results").append(wrap);
+  };
+  card("https://www.linkedin.com/in/ada-lovelace/?mini=1", "Ada Lovelace", "2nd",
+       ["Analyst at Analytical Engines", "London, England, United Kingdom", "Message"]);
+  card("/in/grace-hopper/", "Grace Hopper", "3rd+", ["Rear Admiral, COBOL", "Arlington, Virginia, United States"]);
+  card("/in/grace-hopper/", "Grace Hopper", "3rd+", ["duplicate"]);
+</script>
+</body></html>

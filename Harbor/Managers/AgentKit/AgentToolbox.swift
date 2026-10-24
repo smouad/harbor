@@ -219,6 +219,7 @@ enum AgentError: LocalizedError {
 enum AgentToolbox {
     /// Every built-in tool, by feature.
     static let tools: [AgentTool] = pageTools + browserTools + jobTools + taskTools + recipeTools + perceptionTools + siteTools
+        + linkedInTools
 
     private static let byName = Dictionary(uniqueKeysWithValues: tools.map { ($0.definition.name, $0) })
 

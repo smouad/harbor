@@ -555,6 +555,31 @@ function spin() { while (true) {} }
 
 
 @test
+def linkedin_scrapers_and_sign_in():
+    # The scrapers on pages shaped like LinkedIn's (the tools themselves only open linkedin.com).
+    source = open(os.path.join(HERE, "..", "..", "Harbor", "Managers", "AgentKit", "Resources", "agent-linkedin.js")).read()
+    open_page("linkedin-search.html")
+    hits = page(source + "\nreturn await scrapeSearch()")["hits"]
+    assert [h["profileUrl"] for h in hits] == ["https://www.linkedin.com/in/ada-lovelace/", "https://www.linkedin.com/in/grace-hopper/"], hits
+    assert hits[0]["name"] == "Ada Lovelace" and hits[0]["headline"] == "Analyst at Analytical Engines", hits[0]
+    assert hits[0]["location"] == "London, England, United Kingdom" and hits[0]["connectionDegree"] == "2nd", hits[0]
+    open_page("linkedin-profile.html")
+    profile = page(source + "\nreturn await scrapeProfile()")["profile"]
+    assert profile["name"] == "Ada Lovelace" and profile["headline"] == "Writing the first program", profile
+    assert profile["currentCompany"] == "Analytical Engines" and profile["currentSchool"] == "University of London", profile
+    assert profile["location"] == "London, England, United Kingdom" and profile["followers"] == 1234, profile
+    assert profile["connections"] == "500+ connections" and profile["latestPost"]["time"] == "2w", profile
+    assert profile["latestPost"]["text"].startswith("Notes on the Analytical Engine"), profile["latestPost"]
+    # Signed out, the tool says so rather than returning nothing.
+    run = call("linkedin_search", {"query": "harbor browser"})
+    if run["state"] == "running":
+        run = wait_job(run["job"], timeout=60)
+    if run["state"] == "done":
+        raise Skip("the copy is signed in to LinkedIn; the signed-out message was not checked")
+    assert run["state"] == "failed" and "sign in" in run["error"].lower(), run
+
+
+@test
 def watches_and_schedules():
     path = os.path.join(FIXTURES, "watch.html")
     original = open(path).read()

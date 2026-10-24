@@ -280,6 +280,19 @@ struct HarborCommands: Commands {
                 }
                 .modifier(dynamicShortcut(.pickElement))
                 .disabled(browserManager.tabs.activeWindowSession == nil)
+
+                if harborSettings.browserControlServerEnabled {
+                    if AgentHub.shared.recorder.isRecording {
+                        Button("Stop Recording Recipe") {
+                            AgentHub.shared.recorder.stop()
+                        }
+                    } else {
+                        Button("Record Recipe in This Tab") {
+                            browserManager.recordRecipeInCurrentTab()
+                        }
+                        .disabled(browserManager.tabs.activeWindowSession == nil)
+                    }
+                }
             }
 
             Divider()
