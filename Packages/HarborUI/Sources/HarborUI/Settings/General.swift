@@ -53,6 +53,8 @@ public struct SettingsGeneralTab: View {
 
             Section {
                 Toggle("Automatic Picture in Picture", isOn: $settings.autoPictureInPicture)
+                Toggle("Dock the player in the sidebar", isOn: $settings.pipDockInSidebar)
+                    .disabled(!settings.autoPictureInPicture)
                 Toggle("Pinch the floating player over other apps", isOn: $settings.pipPinchOverOtherApps)
                     .onChange(of: settings.pipPinchOverOtherApps) { _, on in
                         guard on else { return }
@@ -70,7 +72,7 @@ public struct SettingsGeneralTab: View {
                     }
                 }
             } footer: {
-                Text("Leaving a tab with a playing video keeps it playing in a small player above the sidebar, or in a floating window when the sidebar is hidden. Move the floating player with two fingers and pinch to resize it. While another app is in front, macOS sends a pinch only to that app, so pinching the player there needs Accessibility access. Harbor then takes only pinches made with the pointer on the player.")
+                Text("Leaving a tab with a playing video keeps it playing in a floating player. With docking on, it sits above the sidebar's media controls instead, or floats when the sidebar is hidden. Move the floating player with two fingers and pinch to resize it. While another app is in front, macOS sends a pinch only to that app, so pinching the player there needs Accessibility access. Harbor then takes only pinches made with the pointer on the player.")
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 hasAccessibility = AXIsProcessTrusted()

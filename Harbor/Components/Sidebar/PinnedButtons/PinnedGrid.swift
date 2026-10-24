@@ -13,7 +13,6 @@ import HarborWeb
 import HarborUI
 
 struct PinnedGrid: View {
-    let width: CGFloat
     let spaceID: UUID?
 
     @EnvironmentObject var browserManager: BrowserManager
@@ -23,10 +22,14 @@ struct PinnedGrid: View {
     /// Arc's grid: four across at the default width, fewer when the sidebar is narrower.
     private let maxColumns = 4
 
-    init(width: CGFloat, spaceID: UUID? = nil) {
-        self.width = width
+    init(spaceID: UUID? = nil) {
         self.spaceID = spaceID
     }
+
+    /// Read here, in the grid's own body: a page is a cached hosting view, so a width passed in
+    /// from the parent's body only reached it by rebuilding the whole page on every pixel of a
+    /// resize, which reset each tile's favicon to the placeholder.
+    private var width: CGFloat { windowState.sidebarContentWidth }
 
     private var tabs: TabsController { browserManager.tabs }
 
@@ -35,7 +38,6 @@ struct PinnedGrid: View {
         let effectiveSpaceID = spaceID ?? windowState.spaceID
         let items: [Item] = effectiveSpaceID.map { tabs.favorites(of: $0) } ?? []
         let colsCount: Int = columnCount(for: width, itemCount: items.count)
-        let columns: [GridItem] = makeColumns(count: colsCount)
 
         let shouldAnimate = (windowRegistry.activeWindow?.id == windowState.id) && !browserManager.isSwitchingSpace
 
@@ -87,22 +89,34 @@ struct PinnedGrid: View {
                     manager: dragSession,
                     onDrop: { id, position in tabs.dropOnFavorites(id, spaceID: spaceID, index: position.index) }
                 ) {
-                    LazyVGrid(columns: columns, alignment: .center, spacing: HarborDesign.Spacing.tileGap) {
+                    // Not a lazy grid: a lazy one reports no height until its second layout pass, so a
+                    // page built a moment before it slid in showed its tabs too high and then dropped
+                    // them when the favorites appeared.
+                    // Each tile is given its share of the width outright: a grid sizes a column from
+                    // its content's ideal width, and the first tile took the whole row.
+                    let tileWidth = max(1, floor((width - HarborDesign.Spacing.tileGap * CGFloat(colsCount - 1)) / CGFloat(colsCount)))
+                    Grid(horizontalSpacing: HarborDesign.Spacing.tileGap, verticalSpacing: HarborDesign.Spacing.tileGap) {
                         let insertionIdx = insertionIndex(in: zone, items: items)
+                        let cells = gridCells(items: items, insertion: insertionIdx)
 
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            let isDraggedItem = dragSession.draggedItem?.tabId == item.id
-
-                            if let ins = insertionIdx, ins == index, !isDraggedItem {
-                                essentialsPlaceholder
+                        ForEach(Array(stride(from: 0, to: cells.count, by: colsCount)), id: \.self) { start in
+                            GridRow {
+                                ForEach(cells[start..<min(start + colsCount, cells.count)]) { cell in
+                                    switch cell.kind {
+                                    case let .tile(item):
+                                        PinnedTile(item: item, zone: zone)
+                                            .opacity(dragSession.draggedItem?.tabId == item.id ? 0.0 : 1.0)
+                                            .frame(width: tileWidth)
+                                    case .placeholder:
+                                        essentialsPlaceholder
+                                            .frame(width: tileWidth)
+                                    }
+                                }
+                                // A last row with fewer tiles keeps the same column widths.
+                                ForEach(0..<(colsCount - min(colsCount, cells.count - start)), id: \.self) { _ in
+                                    Color.clear.frame(width: tileWidth, height: 0)
+                                }
                             }
-
-                            PinnedTile(item: item, zone: zone)
-                                .opacity(isDraggedItem ? 0.0 : 1.0)
-                        }
-
-                        if let ins = insertionIdx, ins >= items.count {
-                            essentialsPlaceholder
                         }
                     }
                     .animation(HarborDesign.Motion.spring, value: insertionIndex(in: zone, items: items))
@@ -114,6 +128,28 @@ struct PinnedGrid: View {
                 .allowsHitTesting(!browserManager.isSwitchingSpace)
             }
         }
+    }
+
+    /// One cell of the favorites grid: a tile, or the gap a dragged tile will drop into.
+    private struct GridCell: Identifiable {
+        enum Kind { case tile(Item), placeholder }
+        let id: String
+        let kind: Kind
+    }
+
+    private func gridCells(items: [Item], insertion: Int?) -> [GridCell] {
+        var cells: [GridCell] = []
+        for (index, item) in items.enumerated() {
+            let isDraggedItem = dragSession.draggedItem?.tabId == item.id
+            if let insertion, insertion == index, !isDraggedItem {
+                cells.append(GridCell(id: "gap", kind: .placeholder))
+            }
+            cells.append(GridCell(id: item.id.uuidString, kind: .tile(item)))
+        }
+        if let insertion, insertion >= items.count {
+            cells.append(GridCell(id: "gap", kind: .placeholder))
+        }
+        return cells
     }
 
     /// The insertion index for the grid during a drag, or nil when no placeholder should show.
@@ -147,17 +183,6 @@ struct PinnedGrid: View {
             cols -= 1
         }
         return max(1, cols)
-    }
-
-    private func makeColumns(count: Int) -> [GridItem] {
-        Array(
-            repeating: GridItem(
-                .flexible(minimum: HarborDesign.Size.essentialsTile),
-                spacing: HarborDesign.Spacing.tileGap,
-                alignment: .center
-            ),
-            count: count
-        )
     }
 }
 

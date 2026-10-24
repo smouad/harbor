@@ -52,7 +52,7 @@ public struct TabFolderView: View {
                     .rotationEffect(.degrees(isOpen ? 90 : 0))
                     .animation(HarborDesign.Motion.standard, value: isOpen)
 
-                Image(systemName: liveSymbol ?? (isOpen ? "folder.fill" : "folder"))
+                Image(systemName: liveSymbol ?? (isOpen ? "folder" : "folder.fill"))
                     .font(.system(size: HarborDesign.Size.spaceIcon, weight: .medium))
                     .foregroundStyle(tabs.space(spaceID)?.accentColor ?? .secondary)
 
@@ -93,12 +93,18 @@ public struct TabFolderView: View {
                 }
 
                 if isHovering && !isRenaming {
+                    // The same plain dots as the space's own menu.
                     Menu {
                         folderMenu
                     } label: {
-                        Image(systemName: "ellipsis.circle.fill")
+                        Image(systemName: "ellipsis")
+                            .frame(width: HarborDesign.Size.rowButton, height: HarborDesign.Size.rowButton)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(HarborIconButtonStyle(size: HarborDesign.Size.rowButton, radius: HarborDesign.Radius.sm))
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, HarborDesign.Spacing.rowPadding)

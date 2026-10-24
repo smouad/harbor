@@ -10,6 +10,7 @@
 import AppKit
 import SwiftUI
 import HarborDesign
+import HarborTabsCore
 import HarborWeb
 import HarborUI
 
@@ -185,7 +186,19 @@ struct WindowView: View {
         browserManager.gradientColorManager.setImmediate(SpaceGradient.accent(hex: hex))
     }
 
+    /// The theme of the space this window shows. Private windows and the Agent space keep their own look.
+    private var activeTheme: SpaceTheme? {
+        guard !windowState.isIncognito, !showsAgentSpace, let spaceID = windowState.spaceID else { return nil }
+        return tabs.space(spaceID)?.theme
+    }
+
     private var resolvedColorScheme: ColorScheme? {
+        // A theme set to light or dark decides for its space; automatic follows the app's setting.
+        switch activeTheme?.mode {
+        case .light: return .light
+        case .dark: return .dark
+        default: break
+        }
         switch harborSettings.appearanceMode {
         case .light: return .light
         case .dark: return .dark
@@ -205,16 +218,26 @@ struct WindowView: View {
         let accent = windowState.isIncognito ? SpaceGradient.incognito.primaryColor : browserManager.gradientColorManager.accentColor
         let isActive = windowRegistry.activeWindowId == windowState.id
 
-        HarborDesign.Surface.containerGradient(accent: accent, isActive: isActive)
+        Group {
+            if let theme = activeTheme {
+                SpaceThemeBackground(theme: theme, isActive: isActive)
+            } else {
+                HarborDesign.Surface.containerGradient(accent: accent, isActive: isActive)
+            }
+        }
             // Private windows tint all chrome so they are never mistaken for a regular window.
             .overlay(windowState.isIncognito ? HarborDesign.Surface.privateTint : Color.clear)
             // So is the Agent space, with its fixed gradient.
             .overlay(Rectangle().fill(HarborDesign.Surface.agentGradient).opacity(showsAgentSpace ? HarborDesign.Surface.agentChromeOpacity : 0))
-            .overlay(HarborGrain())
+            // A themed space lays its own grain.
+            .overlay { if activeTheme == nil { HarborGrain() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .backgroundDraggable()
             .environment(windowState)
             .animation(HarborDesign.Motion.standard, value: isActive)
+            // The chrome changes with the space (its color, its theme, the Agent's amber), and
+            // fades with the slide instead of snapping a frame after it began.
+            .animation(HarborDesign.Motion.standard, value: windowState.spaceID)
     }
 
     @ViewBuilder

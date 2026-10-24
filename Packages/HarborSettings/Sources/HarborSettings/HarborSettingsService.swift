@@ -62,6 +62,8 @@ public final class HarborSettingsService {
     private let autoPictureInPictureKey = "settings.autoPictureInPicture"
     /// Public so the floating player, which has no settings object, can read it directly.
     public static let pipPinchOverOtherAppsKey = "settings.pipPinchOverOtherApps"
+    /// Public for the same reason: the player's controller reads it without a settings object.
+    public static let pipDockInSidebarKey = "settings.pipDockInSidebar"
     private let sponsorBlockEnabledKey = "settings.sponsorBlockEnabled"
     private let sponsorBlockCategoryOptionsKey = "settings.sponsorBlockCategoryOptions"
     private let siteRoutingRulesKey = "settings.siteRoutingRules"
@@ -426,6 +428,13 @@ public final class HarborSettingsService {
         }
     }
 
+    /// A video leaving its tab docks above the sidebar's media controls instead of floating.
+    public var pipDockInSidebar: Bool {
+        didSet {
+            userDefaults.set(pipDockInSidebar, forKey: Self.pipDockInSidebarKey)
+        }
+    }
+
     public var sponsorBlockEnabled: Bool {
         didSet {
             userDefaults.set(sponsorBlockEnabled, forKey: sponsorBlockEnabledKey)
@@ -524,6 +533,7 @@ public final class HarborSettingsService {
             sponsorBlockEnabledKey: false,
             autoPictureInPictureKey: false,
             Self.pipPinchOverOtherAppsKey: false,
+            Self.pipDockInSidebarKey: false,
         ])
 
         // Initialize properties from UserDefaults
@@ -633,6 +643,7 @@ public final class HarborSettingsService {
         self.autoRenamePinnedTabs = userDefaults.bool(forKey: autoRenamePinnedTabsKey)
         self.autoPictureInPicture = userDefaults.bool(forKey: autoPictureInPictureKey)
         self.pipPinchOverOtherApps = userDefaults.bool(forKey: Self.pipPinchOverOtherAppsKey)
+        self.pipDockInSidebar = userDefaults.bool(forKey: Self.pipDockInSidebarKey)
         self.sponsorBlockEnabled = userDefaults.bool(forKey: sponsorBlockEnabledKey)
         if let sbData = userDefaults.data(forKey: sponsorBlockCategoryOptionsKey),
            let sbDecoded = try? JSONDecoder().decode([String: String].self, from: sbData) {

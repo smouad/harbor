@@ -16,6 +16,22 @@ import HarborTabsCore
 import HarborUI
 import HarborWeb
 
+/// Where the two panes sit for a divider fraction. The compositor and the divider both use it.
+enum SplitLayout {
+    static let gap: CGFloat = 8
+
+    static func leftWidth(in total: NSRect, fraction: CGFloat) -> CGFloat {
+        floor(total.width * fraction)
+    }
+
+    static func rects(in total: NSRect, fraction: CGFloat) -> (left: NSRect, right: NSRect) {
+        let leftWidth = leftWidth(in: total, fraction: fraction)
+        return (NSRect(x: total.minX, y: total.minY, width: max(1, leftWidth - gap / 2), height: total.height),
+                NSRect(x: total.minX + leftWidth + gap / 2, y: total.minY,
+                       width: max(1, total.width - leftWidth - gap / 2), height: total.height))
+    }
+}
+
 final class SplitPaneView: NSView {
     // A CGColor is frozen at creation; re-resolve it when light/dark changes.
     override func viewDidChangeEffectiveAppearance() {
@@ -87,6 +103,69 @@ final class SplitPaneView: NSView {
         }
         view.autoresizingMask = [.width, .height]
         view.isHidden = false
+    }
+
+    // MARK: - Resizing in step with the page
+
+    /// True from `beginPageResize` until `commitResize`: the compositor leaves the pane alone.
+    private(set) var holdsLayout = false
+
+    /// The pane's page, when it holds one that is not beside a docked inspector.
+    private var resizablePage: WKWebView? {
+        guard !content.subviews.contains(where: \.isWebInspectorView) else { return nil }
+        return content.subviews.first { $0 is WKWebView } as? WKWebView
+    }
+
+    /// WebKit lays a page out in another process, so a page given a new size draws the old layout
+    /// for a few frames, cropped or short of the pane. Resizing the pane at the same moment shows
+    /// that. Instead the page is resized first, behind the pane's unchanged edges, and the pane
+    /// follows in `commitResize` once the page has drawn at the new size. Until then the pane's
+    /// background is the page's own, so a page that shrank leaves no dark strip.
+    func beginPageResize(to size: NSSize) {
+        guard let web = resizablePage else { return }
+        holdsLayout = true
+        content.autoresizesSubviews = false
+        content.wantsLayer = true
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            content.layer?.backgroundColor = web.underPageBackgroundColor?.cgColor
+        }
+        web.frame = NSRect(origin: web.frame.origin, size: size)
+    }
+
+    /// Calls `done` when the page has drawn at the size `beginPageResize` gave it, or after 0.3 s
+    /// if WebKit never answers (a page that crashed).
+    func whenPageDrawn(_ done: @escaping () -> Void) {
+        guard holdsLayout, let web = resizablePage else { done(); return }
+        var finished = false
+        let finish = {
+            guard !finished else { return }
+            finished = true
+            done()
+        }
+        // The script forces layout; the presentation update after it carries the result.
+        web.evaluateJavaScript("document.documentElement.offsetWidth") { _, _ in
+            let selector = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+            guard web.responds(to: selector) else { finish(); return }
+            typealias After = @convention(c) (AnyObject, Selector, @convention(block) () -> Void) -> Void
+            let after = unsafeBitCast(web.method(for: selector), to: After.self)
+            // Made outside the guarded call: WebKit keeps this block.
+            let drawn: @convention(block) () -> Void = { finish() }
+            if HarborCatchObjCException({ after(web, selector, drawn) }) != nil { finish() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: finish)
+    }
+
+    /// Moves the pane to `rect`, with the page already at that size.
+    func commitResize(to rect: NSRect) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frame = rect
+        content.frame = bounds
+        if let web = resizablePage { web.frame = content.bounds }
+        content.autoresizesSubviews = true
+        content.layer?.backgroundColor = nil
+        holdsLayout = false
+        CATransaction.commit()
     }
 
     override func setFrameSize(_ newSize: NSSize) {

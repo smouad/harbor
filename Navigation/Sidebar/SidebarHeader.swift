@@ -32,16 +32,14 @@ struct SidebarHeader: View {
         }
     }
 
-    /// With the address in the top bar and the sidebar on the left, the name shares the
-    /// traffic-light row (`SpacesSideBarView.titleRow`), as in Dia. With the address in the
-    /// sidebar the name heads the space's tabs, so this row is left only for buttons.
+    /// The space's name always heads its tabs (`SpaceView`'s title), so this row is only buttons.
     private var showsControlsRow: Bool {
         let hasButtons = harborSettings.sidebarPosition != .left || harborSettings.showAIAssistant
         return harborSettings.topBarAddressView ? harborSettings.sidebarPosition != .left : hasButtons
     }
 
     private var windowControls: some View {
-        SidebarWindowControlsView(showsTitle: harborSettings.topBarAddressView, onNewSpace: onNewSpace)
+        SidebarWindowControlsView(showsTitle: false, onNewSpace: onNewSpace)
             .environmentObject(browserManager)
             .environment(windowState)
             .padding(.horizontal, HarborDesign.Spacing.sidebarInset)

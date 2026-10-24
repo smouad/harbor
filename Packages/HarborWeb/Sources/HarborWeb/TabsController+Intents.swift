@@ -610,9 +610,9 @@ extension TabsController {
     }
 
     /// The Agent space keeps its name and look, so it never passes for an ordinary space.
-    public func updateSpace(_ spaceID: UUID, name: String?, icon: String?, accentHex: String?) {
+    public func updateSpace(_ spaceID: UUID, name: String?, icon: String?, accentHex: String?, theme: SpaceTheme? = nil, clearTheme: Bool = false) {
         guard let owner = owner(ofSpace: spaceID), spaceID != agentSpaceID else { return }
-        perform(owner, "updateSpace") { try $0.updateSpace(spaceID, name: name, icon: icon, accentHex: accentHex) }
+        perform(owner, "updateSpace") { try $0.updateSpace(spaceID, name: name, icon: icon, accentHex: accentHex, theme: theme, clearTheme: clearTheme) }
     }
 
     func moveSpace(_ spaceID: UUID, after: UUID?) {

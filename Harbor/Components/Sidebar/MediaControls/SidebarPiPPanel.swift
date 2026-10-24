@@ -18,6 +18,27 @@ import HarborSettings
 import HarborUI
 import HarborWeb
 
+// MARK: - Staying on screen
+
+/// Moved back inside the screen it mostly sits on, and shrunk if it is bigger than that screen's
+/// usable area, so a drag or a gesture can never leave the player half out of sight on a laptop.
+private func pipKeptOnScreen(_ frame: CGRect) -> CGRect {
+    func overlap(_ screen: NSScreen) -> CGFloat {
+        let shared = screen.visibleFrame.intersection(frame)
+        return shared.isNull ? 0 : shared.width * shared.height
+    }
+    guard let screen = NSScreen.screens.max(by: { overlap($0) < overlap($1) }) ?? NSScreen.main else { return frame }
+    let area = screen.visibleFrame
+    var kept = frame
+    if kept.width > area.width || kept.height > area.height {
+        let scale = min(area.width / kept.width, area.height / kept.height)
+        kept.size = CGSize(width: kept.width * scale, height: kept.height * scale)
+    }
+    kept.origin.x = min(max(kept.minX, area.minX), area.maxX - kept.width)
+    kept.origin.y = min(max(kept.minY, area.minY), area.maxY - kept.height)
+    return kept
+}
+
 // MARK: - Controller
 
 /// One per window. Owns which page is showing in the sidebar and the page-side isolation that
@@ -65,6 +86,10 @@ final class SidebarPiPController: PictureInPictureHolder {
     /// the same video the panel was showing. The bar cannot re-derive this on its own: it finds
     /// a tab by "is playing", which skips a paused video and leaves the previous one on screen.
     private(set) var barSession: PageSession?
+
+    /// Whether a video leaving its tab docks above the sidebar's media controls. Off by default:
+    /// it floats over the page instead, and can still be dragged into the dock.
+    static var dockInSidebar: Bool { UserDefaults.standard.bool(forKey: HarborSettingsService.pipDockInSidebarKey) }
 
     var isShowing: Bool { itemID != nil }
     var isDocked: Bool { isShowing && !isFloating }
@@ -129,6 +154,7 @@ final class SidebarPiPController: PictureInPictureHolder {
                 guard let self, self.generation == generation else { return }
                 withAnimation(HarborDesign.Motion.spring) { self.isReady = true }
                 self.follow(webView)
+                if !Self.dockInSidebar { self.popOut(fromDock: false) }
             }
         }
     }
@@ -240,21 +266,30 @@ final class SidebarPiPController: PictureInPictureHolder {
     // MARK: - Floating
 
     /// Called mid-drag from the sidebar: the panel appears under the pointer and keeps following.
-    func popOut() {
+    /// `fromDock` is false when the video was never docked (it floats on arrival), so the panel
+    /// opens in place instead of growing out of a dock box that is still collapsed.
+    func popOut(fromDock: Bool = true) {
         guard let webView, isReady, !isFloating else { return }
         let size = CGSize(width: Self.lastFloatWidth, height: Self.lastFloatWidth / aspect)
         let mouse = NSEvent.mouseLocation
+        let dragging = fromDock && NSEvent.pressedMouseButtons & 1 == 1
         var free = CGRect(origin: CGPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height / 2), size: size)
+        if !fromDock, let window = windowState?.window {
+            // First time: the window's top right corner, clear of the toolbar.
+            let inset = HarborDesign.Spacing.xl
+            free.origin = CGPoint(x: window.frame.maxX - size.width - inset,
+                                  y: window.frame.maxY - size.height - HarborDesign.Size.row * 2 - inset)
+        }
         // Back where it last floated, unless that screen is gone.
         if let origin = Self.lastFloatOrigin {
             let last = CGRect(origin: origin, size: size)
             if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(last) }) { free = last }
         }
+        free = pipKeptOnScreen(free)
         // Opens over the docked video: a drag starts snapped into the dock box it is leaving.
-        let docked = webView.superview.flatMap { view in
+        let docked = !fromDock ? free : webView.superview.flatMap { view in
             view.window.map { $0.convertToScreen(view.convert(view.bounds, to: nil)) }
         } ?? free
-        let dragging = NSEvent.pressedMouseButtons & 1 == 1
         let panel = SidebarPiPFloatPanel(contentRect: docked)
         let root = FloatRootView(controller: self, frame: CGRect(origin: .zero, size: docked.size))
         root.container.crop = videoRect
@@ -273,7 +308,7 @@ final class SidebarPiPController: PictureInPictureHolder {
         floatWindow = panel
         if dragging {
             DispatchQueue.main.async { self.trackDrag(freeSize: size) }
-        } else {
+        } else if fromDock {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = HarborDesign.Motion.standardDuration
                 panel.animator().setFrame(free, display: true)
@@ -293,8 +328,23 @@ final class SidebarPiPController: PictureInPictureHolder {
     /// Called when the panel comes to rest: after a drag, a resize, or as it closes.
     func rememberFloat() {
         guard let floatWindow, !isOverDock else { return }
-        Self.lastFloatWidth = floatWindow.frame.width
-        Self.lastFloatOrigin = floatWindow.frame.origin
+        let kept = pipKeptOnScreen(floatWindow.frame)
+        Self.lastFloatWidth = kept.width
+        Self.lastFloatOrigin = kept.origin
+    }
+
+    /// Slides the panel back into view when a drag, a resize or a change of displays left part
+    /// of it off screen. It may be dragged out freely; it comes back when let go.
+    func settleOnScreen() {
+        guard let floatWindow, !isOverDock else { return }
+        let kept = pipKeptOnScreen(floatWindow.frame)
+        guard kept != floatWindow.frame else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = HarborDesign.Motion.standardDuration
+            floatWindow.animator().setFrame(kept, display: true)
+        } completionHandler: { [weak self] in
+            self?.rememberFloat()
+        }
     }
 
     private func closeFloat(remember: Bool = true) {
@@ -336,6 +386,7 @@ final class SidebarPiPController: PictureInPictureHolder {
                     // A resize before the drag still counts; the snapped size does not.
                     Self.lastFloatWidth = size.width
                 } else {
+                    self.settleOnScreen()
                     self.rememberFloat()
                     (window.contentView as? FloatRootView)?.syncHover()
                 }
@@ -1017,6 +1068,7 @@ private final class FloatRootView: NSView {
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
+        controller?.settleOnScreen()
         controller?.rememberFloat()
     }
 
@@ -1122,6 +1174,7 @@ private final class FloatRootView: NSView {
         guard isMoving else { return }
         isMoving = false
         window?.invalidateShadow()
+        controller?.settleOnScreen()
         controller?.rememberFloat()
         syncHover()
     }
@@ -1194,6 +1247,13 @@ private final class FloatRootView: NSView {
         setGestureMonitors(window != nil)
         updatePinchTap()
         if window == nil { endMove() }
+        // Unplugging a display must not strand the player on one that is gone.
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        if window != nil {
+            NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.controller?.settleOnScreen() }
+            }
+        }
     }
 
     /// `window` at `width`, clamped between its minimum and most of the screen, with the point
@@ -1212,13 +1272,7 @@ private final class FloatRootView: NSView {
 
     /// Moved back inside the screens' usable area, so a gesture cannot push the player away.
     private static func keptOnScreen(_ frame: CGRect) -> CGRect {
-        let screens = NSScreen.screens.map(\.visibleFrame)
-        guard let first = screens.first else { return frame }
-        let area = screens.dropFirst().reduce(first) { $0.union($1) }
-        var kept = frame
-        kept.origin.x = min(max(kept.minX, area.minX), area.maxX - kept.width)
-        kept.origin.y = min(max(kept.minY, area.minY), area.maxY - kept.height)
-        return kept
+        pipKeptOnScreen(frame)
     }
 }
 

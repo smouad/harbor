@@ -42,13 +42,18 @@ public extension View {
 /// once into a 256 px tile and repeated, so it is one static layer with no per-frame work. Light
 /// and dark specks at random strength read as grain on any accent and in either appearance.
 public struct HarborGrain: View {
-    public init() {}
+    /// 1 is the default strength; a themed space scales it with its own grain setting.
+    let strength: Double
+
+    public init(strength: Double = 1) {
+        self.strength = strength
+    }
 
     public var body: some View {
         if let tile = Self.tile {
             Image(decorative: tile, scale: 2)
                 .resizable(resizingMode: .tile)
-                .opacity(HarborDesign.Surface.grainOpacity)
+                .opacity(HarborDesign.Surface.grainOpacity * strength)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }

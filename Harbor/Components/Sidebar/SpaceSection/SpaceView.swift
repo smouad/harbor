@@ -55,11 +55,13 @@ struct SpaceView: View {
         let pinned = rows.filter { $0.section == .pinned }
         let regular = rows.filter { $0.section == .tabs }
         let split = splitPair(in: rows)
+        // Folded under the space's name.
+        let folded = PinnedCollapse.shared.isCollapsed(spaceID)
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: HarborDesign.Spacing.sectionGap) {
                 // An empty pinned section shows a drop slot only while a drag is on.
-                if !pinned.isEmpty || dragSession.isDragging {
+                if (!pinned.isEmpty && !folded) || dragSession.isDragging {
                     sectionList(.pinned(spaceID: spaceID), rows: pinned, split: split, showsTail: false)
                         .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
                 }
@@ -69,7 +71,7 @@ struct SpaceView: View {
                     sectionList(.tabs(spaceID: spaceID), rows: regular, split: split, showsTail: true)
                 }
             }
-            .animation(HarborDesign.Motion.standard, value: pinned.isEmpty && !dragSession.isDragging)
+            .animation(HarborDesign.Motion.standard, value: (pinned.isEmpty || folded) && !dragSession.isDragging)
             .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
         }
         .contentShape(Rectangle())

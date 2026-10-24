@@ -351,9 +351,9 @@ private struct SplitPreviewOverlay: View {
             let splitState = splitManager.getSplitState(for: windowState.id)
             let previewSide = splitState.previewSide
             let dragLocation = splitState.dragLocation
-            let cardPadding: CGFloat = 20
-            let cardWidth: CGFloat = 315
-            let cardHeight: CGFloat = 522
+            let cardPadding = SplitCardMetrics.padding
+            let leftFrame = SplitCardMetrics.frame(of: .left, in: geometry.size)
+            let rightFrame = SplitCardMetrics.frame(of: .right, in: geometry.size)
             
             HStack(spacing: 0) {
                 // Left card - vertically centered with magnetic effect
@@ -365,12 +365,7 @@ private struct SplitPreviewOverlay: View {
                         text: splitState.isSplit ? "Replace left split" : "Add left split",
                         isTabHovered: previewSide == .left,
                         dragLocation: dragLocation,
-                        cardFrame: CGRect(
-                            x: cardPadding,
-                            y: (geometry.size.height - cardHeight) / 2,
-                            width: cardWidth,
-                            height: cardHeight
-                        ),
+                        cardFrame: leftFrame,
                         geometry: geometry,
                         accentColor: browserManager.gradientColorManager.accentColor
                     )
@@ -389,12 +384,7 @@ private struct SplitPreviewOverlay: View {
                         text: splitState.isSplit ? "Replace right split" : "Add right split",
                         isTabHovered: previewSide == .right,
                         dragLocation: dragLocation,
-                        cardFrame: CGRect(
-                            x: geometry.size.width - cardPadding - cardWidth,
-                            y: (geometry.size.height - cardHeight) / 2,
-                            width: cardWidth,
-                            height: cardHeight
-                        ),
+                        cardFrame: rightFrame,
                         geometry: geometry,
                         accentColor: browserManager.gradientColorManager.accentColor
                     )
@@ -469,7 +459,7 @@ private struct MagneticCardView: View {
             let cardCenter = CGPoint(x: cardFrame.midX, y: cardFrame.midY)
             
             // Check if drag is within card bounds (with some margin for magnetic effect)
-            let margin: CGFloat = 50
+            let margin = SplitCardMetrics.margin
             let expandedFrame = cardFrame.insetBy(dx: -margin, dy: -margin)
             
             if expandedFrame.contains(convertedLocation) {
@@ -677,7 +667,7 @@ struct TabCompositorWrapper: NSViewRepresentable {
         let overlay = containerView.subviews.compactMap { $0 as? SplitDropCaptureView }.first
         // Content subviews = everything except the overlay and WebKit's docked inspector,
         // which belongs to the page beside it (WKWebView+Inspector.swift).
-        let contentSubviews = containerView.subviews.filter { !($0 is SplitDropCaptureView) && !$0.isWebInspectorView }
+        let contentSubviews = containerView.subviews.filter { !($0 is SplitDropCaptureView) && !($0 is SplitDividerView) && !$0.isWebInspectorView }
 
         // A drag preview leaves the panes alone; the drop cards draw over them.
         let currentId = selected?.itemID
@@ -688,13 +678,9 @@ struct TabCompositorWrapper: NSViewRepresentable {
         if isCurrentPane, let leftId, let rightId,
            let leftSession = tabs.ensureSession(for: leftId),
            let rightSession = tabs.ensureSession(for: rightId) {
-            let gap: CGFloat = 8
             let total = containerView.bounds
-            let leftWidth = floor(total.width * split.dividerFraction(for: windowState.id))
-            let leftRect = NSRect(x: total.minX, y: total.minY,
-                                  width: max(1, leftWidth - gap/2), height: total.height)
-            let rightRect = NSRect(x: total.minX + leftWidth + gap/2, y: total.minY,
-                                   width: max(1, total.width - leftWidth - gap/2), height: total.height)
+            let leftWidth = SplitLayout.leftWidth(in: total, fraction: split.dividerFraction(for: windowState.id))
+            let (leftRect, rightRect) = SplitLayout.rects(in: total, fraction: split.dividerFraction(for: windowState.id))
 
             // Panes stay while the pair holds: taking a WKWebView out of its superview
             // drops its video surface, so a selection change leaves the panes alone.
@@ -710,10 +696,26 @@ struct TabCompositorWrapper: NSViewRepresentable {
             }
 
             for (pane, session, rect) in [(panes[0], leftSession, leftRect), (panes[1], rightSession, rightRect)] {
+                // A divider drag is moving this pane in step with its page; it sets the frames.
+                if pane.holdsLayout { continue }
                 pane.frame = rect
                 pane.show(pageView(for: session, reusing: pane.content.subviews))
             }
+
+            // The strip between the panes: drag it to give one side more room.
+            let divider = containerView.subviews.compactMap { $0 as? SplitDividerView }.first ?? {
+                let view = SplitDividerView()
+                containerView.addSubview(view)
+                return view
+            }()
+            divider.windowState = windowState
+            divider.browserManager = browserManager
+            divider.layer?.zPosition = 9_000
+            divider.frame = NSRect(x: total.minX + leftWidth - SplitDividerView.width / 2, y: total.minY,
+                                   width: SplitDividerView.width, height: total.height)
+            containerView.window?.invalidateCursorRects(for: divider)
         } else {
+            containerView.subviews.compactMap { $0 as? SplitDividerView }.forEach { $0.removeFromSuperview() }
             // Single tab (most common path during video playback)
             if let session = selected, !session.isUnloaded {
                 setSingleWebView(pageView(for: session, reusing: contentSubviews), in: containerView, replacing: contentSubviews)
@@ -752,6 +754,10 @@ struct TabCompositorWrapper: NSViewRepresentable {
     /// disconnection that causes black flashes during playback.
     private func setSingleWebView(_ desired: NSView, in containerView: NSView, replacing contentSubviews: [NSView]) {
         let isAlreadyCorrect = contentSubviews.count == 1 && contentSubviews.first === desired
+        // The Agent space's page sits at a fixed 1440x900 while hidden, so opening the space
+        // resizes it, and until WebKit lays it out again the old, smaller page shows in a corner
+        // of the window.
+        let comesFromAgentHost = desired.superview is AgentPageHostView
 
         if !isAlreadyCorrect {
             // Remove stale content views. A page leaving takes its docked inspector with it.
@@ -772,6 +778,28 @@ struct TabCompositorWrapper: NSViewRepresentable {
         }
         desired.autoresizingMask = [NSView.AutoresizingMask.width, NSView.AutoresizingMask.height]
         desired.isHidden = false
+        if comesFromAgentHost, let page = desired as? WKWebView { revealAfterLayout(page) }
+    }
+
+    /// Keeps a page invisible until WebKit has drawn it at its new size, then fades it in, so a
+    /// resized page never shows as a half-size frame. A page that never reports shows anyway.
+    private func revealAfterLayout(_ page: WKWebView) {
+        page.alphaValue = 0
+        var shown = false
+        let show = {
+            guard !shown else { return }
+            shown = true
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = HarborDesign.Motion.standardDuration
+                page.animator().alphaValue = 1
+            }
+        }
+        let selector = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        if page.responds(to: selector) {
+            typealias Call = @convention(c) (AnyObject, Selector, @escaping @convention(block) () -> Void) -> Void
+            unsafeBitCast(page.method(for: selector), to: Call.self)(page, selector) { show() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { show() }
     }
 
     /// Lays the page's last snapshot over its fresh view until that view draws. A rebuild
@@ -888,6 +916,121 @@ private extension WebsiteView {
         guard splitManager.isSplit(for: windowState.id) else { return false }
         guard let current = windowState.selectedItemID else { return false }
         return current == splitManager.leftTabId(for: windowState.id) || current == splitManager.rightTabId(for: windowState.id)
+    }
+}
+
+// MARK: - Split divider
+
+/// The strip between a split's two panes. Dragging it moves the divider; a double click puts it
+/// back in the middle.
+///
+/// The panes follow the pointer one step at a time, each step waiting until both pages have drawn
+/// at their new size (`SplitPaneView.beginPageResize`). Moving the panes on every mouse event
+/// instead shows each page's old layout, cropped or short of its pane, for as long as WebKit takes
+/// to lay it out. A heavy page makes the divider trail the pointer by that long, but no frame
+/// shows a page that does not fit its pane.
+private final class SplitDividerView: NSView {
+    static let width: CGFloat = 12
+    private static let range: ClosedRange<CGFloat> = 0.2...0.8
+
+    weak var windowState: BrowserWindowState?
+    weak var browserManager: BrowserManager?
+
+    /// What the panes show now, where the pointer is, and whether a step is waiting on the pages.
+    private var applied: CGFloat = 0.5
+    private var target: CGFloat = 0.5
+    private var stepInFlight = false
+    private var dragging = false
+    private var released = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let split = windowState?.split else { return }
+        applied = CGFloat(split.fraction)
+        target = applied
+        dragging = true
+        released = false
+        if event.clickCount == 2 {
+            target = 0.5
+            released = true
+            step()
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard dragging, !released, let container = superview, container.bounds.width > 0 else { return }
+        let fraction = container.convert(event.locationInWindow, from: nil).x / container.bounds.width
+        target = min(max(fraction, Self.range.lowerBound), Self.range.upperBound)
+        step()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard dragging else { return }
+        released = true
+        step()
+    }
+
+    private var panes: [SplitPaneView]? {
+        let panes = (superview?.subviews.compactMap { $0 as? SplitPaneView } ?? []).sorted { $0.side == .left && $1.side == .right }
+        return panes.count == 2 ? panes : nil
+    }
+
+    /// Moves the panes to `target`, or ends the drag when there is nothing left to move.
+    private func step() {
+        guard !stepInFlight else { return }
+        guard abs(target - applied) > 0.0001, let container = superview, let panes else {
+            if released { finish() }
+            return
+        }
+        let fraction = target
+        let total = container.bounds
+        let (left, right) = SplitLayout.rects(in: total, fraction: fraction)
+        let rects = [left, right]
+        stepInFlight = true
+        zip(panes, rects).forEach { $0.beginPageResize(to: $1.size) }
+        var waiting = panes.count
+        for pane in panes {
+            pane.whenPageDrawn { [weak self] in
+                waiting -= 1
+                guard waiting == 0, let self else { return }
+                zip(panes, rects).forEach { $0.commitResize(to: $1) }
+                let leftWidth = SplitLayout.leftWidth(in: total, fraction: fraction)
+                self.frame = NSRect(x: total.minX + leftWidth - Self.width / 2, y: total.minY,
+                                    width: Self.width, height: total.height)
+                self.window?.invalidateCursorRects(for: self)
+                self.applied = fraction
+                self.setFraction(fraction)
+                self.stepInFlight = false
+                self.step()
+            }
+        }
+    }
+
+    /// Saves the window's record, which carries the fraction, once the drag is over.
+    private func finish() {
+        dragging = false
+        guard let windowState else { return }
+        browserManager?.tabs.mirror(windowState)
+    }
+
+    /// Keeps the model in step with the panes, so a compositor pass in between lays them out the same.
+    private func setFraction(_ fraction: CGFloat) {
+        guard var split = windowState?.split else { return }
+        split.fraction = Double(fraction)
+        windowState?.split = split
     }
 }
 

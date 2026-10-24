@@ -68,9 +68,16 @@ struct SidebarHoverOverlayView: View {
     private var sidebarBackground: some View {
         let accent = windowState.isIncognito ? SpaceGradient.incognito.primaryColor : browserManager.gradientColorManager.accentColor
         let isAgent = windowState.spaceID != nil && windowState.spaceID == browserManager.tabs.agentSpaceID
-        return HarborDesign.Surface.containerGradient(accent: accent, isActive: true)
+        let theme = windowState.isIncognito || isAgent ? nil : windowState.spaceID.flatMap { browserManager.tabs.space($0)?.theme }
+        return Group {
+            if let theme {
+                SpaceThemeBackground(theme: theme, isActive: true)
+            } else {
+                HarborDesign.Surface.containerGradient(accent: accent, isActive: true)
+            }
+        }
             .overlay(windowState.isIncognito ? HarborDesign.Surface.privateTint : Color.clear)
             .overlay(Rectangle().fill(HarborDesign.Surface.agentGradient).opacity(isAgent ? HarborDesign.Surface.agentChromeOpacity : 0))
-            .overlay(HarborGrain())
+            .overlay { if theme == nil { HarborGrain() } }
     }
 }

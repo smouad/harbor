@@ -21,6 +21,7 @@ struct SidebarBottomBar: View {
     let onMenuTap: () -> Void
     let onNewSpaceTap: () -> Void
     let onMenuHover: (Bool) -> Void
+    @State private var showsNewMenu = false
     
     var body: some View {
         HStack(alignment: .center, spacing: HarborDesign.Spacing.xxs) {
@@ -63,42 +64,20 @@ struct SidebarBottomBar: View {
     }
     
     private var newSpaceButton: some View {
-        Menu{
-            Button("New Space", systemImage: "square.grid.2x2") {
-                onNewSpaceTap()
-            }
-            
-            Button("New Folder", systemImage: "folder.badge.plus") {
-                if let spaceID = windowState.spaceID {
-                    tabs.createFolderForRename(in: .tabs(spaceID: spaceID), after: nil)
-                }
-            }
-
-            if !windowState.isIncognito {
-                ForEach(LiveFolderMenuItem.all, id: \.title) { entry in
-                    Button(entry.title, systemImage: entry.symbol) {
-                        if let spaceID = windowState.spaceID {
-                            tabs.createLiveFolder(entry.source, in: spaceID)
-                        }
-                    }
-                }
-                Button("New Feed Folder…", systemImage: "dot.radiowaves.up.forward") {
-                    if let spaceID = windowState.spaceID {
-                        browserManager.presentFeedFolderPrompt(in: spaceID)
-                    }
-                }
-            }
-            
-            Divider()
-            
-            Button("New Profile", systemImage: "person.badge.plus") {
-                // TODO: Show profile creation dialog
-            }
-        } label:{
-            Label("Actions", systemImage: "plus")
+        Button {
+            showsNewMenu.toggle()
+        } label: {
+            // The plus turns into a cross while its card is open, as in Arc.
+            Label("Actions", systemImage: showsNewMenu ? "xmark" : "plus")
+                .contentTransition(.symbolEffect(.replace))
         }
-        .menuStyle(.button)
         .harborIconButtons()
+        .popover(isPresented: $showsNewMenu, arrowEdge: .top) {
+            SidebarNewMenu(onNewSpace: onNewSpaceTap) { showsNewMenu = false }
+                .environmentObject(browserManager)
+                .environment(tabs)
+                .environment(windowState)
+        }
     }
 }
 

@@ -154,11 +154,12 @@ extension TabTree {
     }
 
     @discardableResult
-    public mutating func updateSpace(_ id: UUID, name: String? = nil, icon: String? = nil, accentHex: String? = nil, now: Date = Date()) throws -> Change {
+    public mutating func updateSpace(_ id: UUID, name: String? = nil, icon: String? = nil, accentHex: String? = nil, theme: SpaceTheme? = nil, clearTheme: Bool = false, now: Date = Date()) throws -> Change {
         guard var target = space(id) else { throw TreeError.missingSpace }
         if let name { target.name = name }
         if let icon { target.icon = icon }
         if let accentHex { target.accentHex = accentHex }
+        if clearTheme { target.theme = nil } else if let theme { target.theme = theme }
         guard target != spaces[id] else { return Change() }
         target.modifiedAt = now
         var change = Change()

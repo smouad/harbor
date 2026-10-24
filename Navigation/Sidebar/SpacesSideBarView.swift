@@ -28,7 +28,6 @@ struct SpacesSideBarView: View {
 
     // Space navigation. Keyed by space id: an index outlives the space it pointed at.
     @State private var activeSpaceID: UUID?
-    @State private var activeTabRefreshTrigger: Bool = false
 
     // Hover states
     @State private var isSidebarHovered: Bool = false
@@ -204,7 +203,7 @@ struct SpacesSideBarView: View {
         .pageViewStyle(.scroll)
         .contentShape(Rectangle())
         // Pages are cached hosting views; a different set of spaces needs new pages.
-        .id("\(activeTabRefreshTrigger)|\(spaces.map(\.id.uuidString).joined(separator: ","))")
+        .id(spaces.map(\.id.uuidString).joined(separator: ","))
         .onAppear {
             activeSpaceID = windowState.spaceID
             if !spaces.contains(where: { $0.id == windowState.spaceID }) {
@@ -221,9 +220,6 @@ struct SpacesSideBarView: View {
             // the background) left the last space's page on screen.
             guard activeSpaceID != newID else { return }
             withTransaction(Transaction(animation: nil)) { activeSpaceID = newID }
-        }
-        .onChange(of: windowState.sidebarContentWidth) { _, _ in
-            activeTabRefreshTrigger.toggle()
         }
     }
 
@@ -360,12 +356,17 @@ struct SpacesSideBarView: View {
 
     @ViewBuilder
     private func makeSpaceView(for space: SpaceRecord) -> some View {
+        SpacePageFrame {
+            spacePage(for: space)
+        }
+        .environment(windowState)
+    }
+
+    @ViewBuilder
+    private func spacePage(for space: SpaceRecord) -> some View {
         VStack(spacing: 0) {
             if !windowState.isIncognito {
-                PinnedGrid(
-                    width: windowState.sidebarContentWidth,
-                    spaceID: space.id
-                )
+                PinnedGrid(spaceID: space.id)
                 .environmentObject(browserManager)
                 .environment(tabs)
                 .environment(windowState)
@@ -375,19 +376,16 @@ struct SpacesSideBarView: View {
                 .padding(.bottom, HarborDesign.Spacing.sectionGap)
             }
 
-            // With the address in the sidebar its top rows are the window's controls and the
-            // address, so the space's name heads its own tabs instead, under the favorites, as
-            // Arc places it.
-            if !harborSettings.topBarAddressView {
-                SpaceSwitcherTitle(spaceID: space.id, onNewSpace: showSpaceCreationDialog)
-                    .environmentObject(browserManager)
-                    .environment(tabs)
-                    .environment(windowState)
-                    .environment(harborSettings)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, HarborDesign.Spacing.sidebarInset)
-                    .padding(.bottom, HarborDesign.Spacing.xs)
-            }
+            // The space's name heads its own tabs, under the favorites, as Arc places it. It stays
+            // here whichever side the address bar is on: moving the address bar only moves the bar.
+            SpaceSwitcherTitle(spaceID: space.id, onNewSpace: showSpaceCreationDialog, showsActions: true)
+                .environmentObject(browserManager)
+                .environment(tabs)
+                .environment(windowState)
+                .environment(harborSettings)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, HarborDesign.Spacing.sidebarInset)
+                .padding(.bottom, HarborDesign.Spacing.xs)
 
             SpaceView(
                 spaceID: space.id,
@@ -405,7 +403,6 @@ struct SpacesSideBarView: View {
             .environment(harborSettings)
             .environmentObject(browserManager.gradientColorManager)
             .environmentObject(browserManager.splitManager)
-            .id(space.id.uuidString + "-w\(Int(windowState.sidebarContentWidth))")
             Spacer()
         }
         // `.environment(harborSettings)` above sets the object by type; views read the key.
@@ -428,12 +425,6 @@ struct SpacesSideBarView: View {
                 SidebarHistoryButtons()
                     .environmentObject(browserManager)
                     .environment(windowState)
-            } else if harborSettings.sidebarPosition == .left {
-                // The sidebar toggle and history buttons are in the top bar, so the row names the space.
-                SpaceSwitcherTitle(onNewSpace: showSpaceCreationDialog)
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .frame(height: HarborDesign.Size.chromeControl)
             }
         }
     }
@@ -504,5 +495,20 @@ private struct AgentSpaceRow: View {
         .onHoverTracking { hovering in
             withAnimation(HarborDesign.Motion.quick) { isHovering = hovering }
         }
+    }
+}
+
+/// A space's page, held to the sidebar's width. Pages are cached hosting views that do not always
+/// follow the sidebar when it is resized or the window changes, and a page left wider than the
+/// sidebar pushed its rows and favorites past the edge. The width is read here, in the page's own
+/// body, so it is current whatever the parent last passed.
+private struct SpacePageFrame<Content: View>: View {
+    @Environment(BrowserWindowState.self) private var windowState
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .frame(width: windowState.sidebarWidth > 0 ? windowState.sidebarWidth : nil, alignment: .topLeading)
+            .clipped()
     }
 }

@@ -68,10 +68,11 @@ struct MediaControlsView: View {
         return activeMediaTab?.isAudioMuted == true
     }
 
-    /// The video showing above carries its own controls, so the bar stands down while it is up.
-    /// Read here rather than by the sidebar so this view's own body tracks the change.
+    /// A video docked above carries its own controls, so the bar stands down while it is up; a
+    /// floating one leaves the bar in place. Read here rather than by the sidebar so this view's
+    /// own body tracks the change.
     private var isVideoShowing: Bool {
-        windowState.sidebarPiPController?.isShowing == true
+        windowState.sidebarPiPController?.isDocked == true
     }
 
     var body: some View {
@@ -83,6 +84,8 @@ struct MediaControlsView: View {
                     if isHovering {
                         MediaControlsTabTitle(tab: tab)
                     }
+                    // Spacers shrink to nothing: their default minimum added up with seven controls to
+                    // more than the bar has room for, and it spilled past the sidebar's edges.
                     HStack(spacing: 0) {
                         // Tab favicon (collapses first)
                         if shouldShowFavicon {
@@ -95,7 +98,7 @@ struct MediaControlsView: View {
                         }
 
                         if shouldShowFavicon {
-                            Spacer()
+                            Spacer(minLength: 0)
                         }
 
                         // Previous button (collapses second)
@@ -117,7 +120,7 @@ struct MediaControlsView: View {
                         }
 
                         if shouldShowPreviousButton || shouldShowFavicon {
-                            Spacer()
+                            Spacer(minLength: 0)
                         }
 
                         // Play/Pause button
@@ -138,7 +141,7 @@ struct MediaControlsView: View {
                         .foregroundStyle(Color.white)
                         .help(isPlaying ? "Pause" : "Play")
 
-                        Spacer()
+                        Spacer(minLength: 0)
 
                         // Next button
                         Button("Next", systemImage: "forward.end.fill") {
@@ -155,7 +158,7 @@ struct MediaControlsView: View {
                         .foregroundStyle(Color.white)
                         .help("Next")
 
-                        Spacer()
+                        Spacer(minLength: 0)
 
                         Button("Return to Tab", systemImage: "arrow.up.forward.app") {
                             browserManager.tabs.select(tab.itemID, in: windowState)
@@ -165,7 +168,7 @@ struct MediaControlsView: View {
                         .foregroundStyle(Color.white)
                         .help("Return to Tab")
 
-                        Spacer()
+                        Spacer(minLength: 0)
 
                         // Mute toggle
                         Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "speaker.slash.fill": "speaker.wave.2.fill") {
@@ -185,17 +188,18 @@ struct MediaControlsView: View {
                         .foregroundStyle(Color.white)
                         .help(isMuted ? "Unmute" : "Mute")
 
-                        // Bring the video itself back into the sidebar above this bar.
+                        // Picture in picture: the video itself in the floating player, and out again.
                         if tab.hasVideoContent || tab.hasPlayingVideo {
-                            Spacer()
+                            Spacer(minLength: 0)
 
-                            Button("Maximize", systemImage: "arrow.up.left.and.arrow.down.right") {
+                            let inPlayer = windowState.sidebarPiPController?.itemID == tab.itemID
+                            Button("Picture in Picture", systemImage: inPlayer ? "pip.exit" : "pip.enter") {
                                 maximize(tab)
                             }
                             .labelStyle(.iconOnly)
                             .buttonStyle(HarborIconButtonStyle(size: 24))
                             .foregroundStyle(Color.white)
-                            .help("Show video in the sidebar")
+                            .help(inPlayer ? "Close Picture in Picture" : "Picture in Picture")
                         }
                     }
                 }
@@ -261,6 +265,10 @@ struct MediaControlsView: View {
     /// The counterpart of the video's minimise button. Falls back to system picture-in-picture
     /// when the video cannot be isolated, or the sidebar is only the hover overlay.
     private func maximize(_ tab: PageSession) {
+        // The video already in the player goes back to its tab instead.
+        if let controller = windowState.sidebarPiPController, controller.itemID == tab.itemID {
+            return controller.exit()
+        }
         // Private tabs never report leaving, and another window's tab or PiP would lose its view.
         guard let controller = windowState.sidebarPiPController, !tab.isPrivate,
             !browserManager.tabs.isOnScreen(tab.itemID),
