@@ -359,6 +359,10 @@ public final class PageSession: NSObject, Identifiable {
             preferences.isElementFullscreenEnabled = false
             configuration.preferences = preferences
         }
+        // The configuration's controller is this page's own (freshUserContentController).
+        if isAgentPage, let scripts = controller?.agentHost?.agentPageScripts() {
+            scripts.forEach(configuration.userContentController.addUserScript)
+        }
         let created = controller?.webViews?.makeWebView(configuration: configuration)
         (created as? SessionWebView)?.contextMenuBridge = WebContextMenuBridge(session: self, configuration: configuration)
         primaryWebView = created

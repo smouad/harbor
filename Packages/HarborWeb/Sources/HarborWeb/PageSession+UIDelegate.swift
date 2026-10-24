@@ -189,8 +189,12 @@ extension PageSession: WKUIDelegate {
         completionHandler: @escaping () -> Void
     ) {
         // An agent page's dialogs answer at once: a sheet would cover the person's window and
-        // hold the agent's next call until it times out.
-        guard !jsDialogsSuppressed, !isAgentPage, let alerts = controller?.alerts else { return completionHandler() }
+        // hold the agent's next call until it times out. The agent reads them back afterwards.
+        if isAgentPage {
+            _ = controller?.agentHost?.agentPage(self, dialog: .alert, message: message, defaultText: nil)
+            return completionHandler()
+        }
+        guard !jsDialogsSuppressed, let alerts = controller?.alerts else { return completionHandler() }
         alerts.presentAlert(
             message: message, host: frame.securityOrigin.host, over: webView,
             onSuppress: nextDialogSuppressor(), completion: completionHandler)
@@ -202,7 +206,10 @@ extension PageSession: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard !jsDialogsSuppressed, !isAgentPage, let alerts = controller?.alerts else { return completionHandler(false) }
+        if isAgentPage {
+            return completionHandler(controller?.agentHost?.agentPage(self, dialog: .confirm, message: message, defaultText: nil).accept ?? false)
+        }
+        guard !jsDialogsSuppressed, let alerts = controller?.alerts else { return completionHandler(false) }
         alerts.presentConfirm(
             message: message, host: frame.securityOrigin.host, over: webView,
             onSuppress: nextDialogSuppressor(), completion: completionHandler)
@@ -215,7 +222,11 @@ extension PageSession: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (String?) -> Void
     ) {
-        guard !jsDialogsSuppressed, !isAgentPage, let alerts = controller?.alerts else { return completionHandler(nil) }
+        if isAgentPage {
+            let answer = controller?.agentHost?.agentPage(self, dialog: .prompt, message: prompt, defaultText: defaultText)
+            return completionHandler(answer?.accept == true ? answer?.text ?? defaultText ?? "" : nil)
+        }
+        guard !jsDialogsSuppressed, let alerts = controller?.alerts else { return completionHandler(nil) }
         alerts.presentPrompt(
             prompt: prompt, defaultText: defaultText, host: frame.securityOrigin.host, over: webView,
             onSuppress: nextDialogSuppressor(), completion: completionHandler)
@@ -234,7 +245,10 @@ extension PageSession: WKUIDelegate {
         completionHandler: @escaping ([URL]?) -> Void
     ) {
 
-        guard !isAgentPage, let alerts = controller?.alerts else { return completionHandler(nil) }
+        if isAgentPage {
+            return completionHandler(controller?.agentHost?.agentPageOpenPanel(self, allowsMultipleSelection: parameters.allowsMultipleSelection))
+        }
+        guard let alerts = controller?.alerts else { return completionHandler(nil) }
         alerts.presentOpenPanel(
             allowsMultipleSelection: parameters.allowsMultipleSelection,
             allowsDirectories: parameters.allowsDirectories,

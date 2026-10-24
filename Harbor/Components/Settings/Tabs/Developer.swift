@@ -52,6 +52,10 @@ struct SettingsDeveloperTab: View {
                     .font(HarborDesign.Font.caption)
                     .foregroundStyle(.secondary)
             }
+
+            if settings.developerModeEnabled && settings.browserControlServerEnabled {
+                AgentVaultSection()
+            }
         }
         .formStyle(.grouped)
     }

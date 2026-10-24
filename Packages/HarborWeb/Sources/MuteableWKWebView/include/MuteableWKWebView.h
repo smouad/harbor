@@ -7,6 +7,7 @@
 //
 
 #import <WebKit/WebKit.h>
+#import "HarborObjCCatch.h"
 
 @interface WKWebView (MutableWKWebView)
 

@@ -182,40 +182,11 @@ final class DevMCPServer {
         return (200, try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "result": result]))
     }
 
-    /// A tool that never returns must not hold its connection open for ever, so
-    /// every call races a deadline and nil means the deadline won. The losing work
-    /// is cancelled but may not notice: `evaluateJavaScript` cannot be cancelled.
-    private func withTimeout<T: Sendable>(_ seconds: Double, operation: @escaping @MainActor () async -> T) async -> T? {
-        // Not a task group: a group waits for its children even after cancelAll(),
-        // so an abandoned evaluateJavaScript would still hold the connection open
-        // for as long as it took. These two tasks race and the loser is dropped.
-        let latch = Latch()
-        return await withCheckedContinuation { (cont: CheckedContinuation<T?, Never>) in
-            // The deadline task is made first so the work task can cancel it: a tool that
-            // answers in a millisecond otherwise leaves a sleeper on the main actor for the
-            // full timeout, one per request.
-            let deadline = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(seconds))
-                guard !latch.done else { return }
-                latch.done = true
-                latch.work?.cancel()
-                cont.resume(returning: nil)
-            }
-            latch.work = Task { @MainActor in
-                let value = await operation()
-                guard !latch.done else { return }
-                latch.done = true
-                deadline.cancel()
-                cont.resume(returning: value)
-            }
-        }
-    }
-
-    /// Whether the race above has already been decided, and the work task the deadline
-    /// branch cancels (assigned after the deadline task is made, so it is passed this way).
-    @MainActor private final class Latch {
-        var done = false
-        var work: Task<Void, Never>?
+    /// A tool that never returns must not hold its connection open for ever, so every call races
+    /// a deadline and nil means the deadline won (AgentDeadline: the loser is dropped, since
+    /// `evaluateJavaScript` cannot be cancelled and a task group would wait for it).
+    private func withTimeout<T>(_ seconds: Double, operation: @escaping @MainActor () async -> T) async -> T? {
+        await AgentDeadline.run(seconds, operation)
     }
 
     private func rpcError(id: Any, code: Int, message: String) -> Data? {
@@ -349,12 +320,18 @@ final class DevMCPServer {
     /// `executeJavaScript` is not advertised: over this server it is only an old name for
     /// `evaluate` (see callTool), and the chat's description of it is wrong for that behaviour.
     /// The alias stays so an agent registered against the old name keeps working.
-    private static let toolList: [[String: Any]] = (BrowserTools.allTools.filter { $0.name != "executeJavaScript" } + devTools).map {
-        ["name": $0.name, "description": $0.description, "inputSchema": $0.parameters]
+    /// AgentKit's tools come first and replace a DevMCP tool of the same name (screenshot).
+    private static var toolList: [[String: Any]] {
+        let agent = AgentToolbox.definitions
+        let names = Set(agent.map(\.name))
+        let own = (BrowserTools.allTools.filter { $0.name != "executeJavaScript" } + devTools).filter { !names.contains($0.name) }
+        return (agent + own).map { ["name": $0.name, "description": $0.description, "inputSchema": $0.parameters] }
     }
 
     /// About the person's own page, so they act on the active window's tab, not the Agent space.
     private static let humanTools: Set<String> = ["pick", "selection"]
+    /// Manage tabs rather than act on the current page, so a task owning that page does not stop them.
+    private static let tabListTools: Set<String> = ["getTabList", "createTab", "switchTab", "closeTabs", "pinTab", "pages", "clear_page_cache", "check_urls"]
     /// Need no Agent page, so they neither create the Agent space nor load its tab.
     private static let readOnlyTools: Set<String> = ["pages", "clear_page_cache", "check_urls", "getTabList"]
 
@@ -393,6 +370,9 @@ final class DevMCPServer {
         guard let bm = browserManager,
               let window = forPerson ? active : (active?.privateTree == nil ? active : bm.tabs.regularWindows.first)
         else { return text("No browser window", error: true) }
+        if let tool = AgentToolbox.tool(named: name) {
+            return await AgentToolbox.run(tool, args: args, browser: bm, window: window, budget: Self.toolTimeout - 2)
+        }
         // Tools that only read never create the Agent space; with none yet, it has no tabs.
         let agentSpace = forPerson ? nil
             : Self.readOnlyTools.contains(name) ? bm.tabs.agentSpaceID : bm.tabs.ensureAgentSpace(loginsFrom: window)
@@ -402,6 +382,11 @@ final class DevMCPServer {
         }
         let space = forPerson ? window.spaceID : agentSpace
         let order = space.map(bm.tabs.displayOrder(inSpace:)) ?? []
+        // A task's tab answers to the agent tools with `task`, where its pause, sites and
+        // approvals apply; these older tools would go around them.
+        if !forPerson, !Self.tabListTools.contains(name), let refusal = AgentToolbox.taskTabRefusal(bm) {
+            return text(refusal, error: true)
+        }
 
         do {
             if BrowserTools.toolsByName[name] != nil {
@@ -425,6 +410,7 @@ final class DevMCPServer {
             switch name {
             case "evaluate":
                 guard let wv = webView else { return text("No active tab", error: true) }
+                if !forPerson, await AgentRuntime.secretTyped(in: wv) { return text(AgentRuntime.secretScriptRefusal, error: true) }
                 let code = args["code"] as? String ?? ""
                 let world: WKContentWorld = args["world"] as? String == "isolated" ? .defaultClient : .page
                 var saveURL: URL?

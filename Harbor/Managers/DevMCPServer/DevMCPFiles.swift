@@ -11,8 +11,16 @@
 import Foundation
 
 enum DevMCPFiles {
-    static let root = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Harbor MCP", isDirectory: true)
+    /// `-HarborDevMCPFiles /tmp/x` moves it, for a copy running beside the installed app that has no
+    /// access to Downloads: there, the first read or write would stop on the privacy prompt.
+    static let root: URL = {
+        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        if let path = arguments["HarborDevMCPFiles"] as? String, path.hasPrefix("/") {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Harbor MCP", isDirectory: true)
+    }()
 
     /// `relative` under `root`, or nil when it is empty, absolute, or climbs out through `..` or a symlink.
     static func resolve(_ relative: String, root: URL = root) -> URL? {

@@ -302,15 +302,21 @@ struct WebsiteView: View {
             if windowState.spaceID != nil, windowState.spaceID == browserManager.tabs.agentSpaceID {
                 AgentFrame(shape: webViewClipShape, busy: browserManager.tabs.agentCallsInFlight > 0)
             }
+
+            // Approvals, handoffs and recordings in every window; the task list in the Agent space.
+            AgentOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
 }
 
-/// The Agent space's frame and label over its page. Never takes a click.
+/// The Agent space's frame and label over its page. Never takes a click. The label pulses while a
+/// call runs, in an active window only (see AgentSpaceRow).
 private struct AgentFrame: View {
     let shape: AnyShape
     let busy: Bool
+    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         shape.stroke(HarborDesign.Surface.agentGradient, lineWidth: HarborDesign.Surface.agentFrameWidth)
@@ -318,7 +324,7 @@ private struct AgentFrame: View {
                 Label("Agent", systemImage: "sparkles")
                     .font(HarborDesign.Font.captionStrong)
                     .foregroundStyle(.white)
-                    .symbolEffect(.pulse, isActive: busy)
+                    .symbolEffect(.pulse, isActive: busy && activeState != .inactive)
                     .padding(.horizontal, HarborDesign.Spacing.md)
                     .padding(.vertical, HarborDesign.Spacing.xs)
                     .background(HarborDesign.Surface.agentGradient, in: Capsule())

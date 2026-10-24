@@ -77,6 +77,8 @@ public final class TabsController {
     @ObservationIgnored public weak var sessionDelegate: PageSessionDelegate?
     @ObservationIgnored public weak var tabEvents: TabEventObserver?
     @ObservationIgnored public weak var alerts: AlertPresenter?
+    /// Decides for Agent space pages: their scripts, sites, dialogs and file pickers.
+    @ObservationIgnored public weak var agentHost: AgentPageHost?
     /// Called with each tab that a move brought into a pinned section from the tabs section.
     @ObservationIgnored public var onTabsPinned: (([UUID]) -> Void)?
 

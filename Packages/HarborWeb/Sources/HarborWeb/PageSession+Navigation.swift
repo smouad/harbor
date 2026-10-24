@@ -318,6 +318,13 @@ extension PageSession: WKNavigationDelegate {
             return
         }
 
+        // A task's page stays on the sites its task allows.
+        if isAgentPage, navigationAction.targetFrame?.isMainFrame != false, let url = navigationAction.request.url,
+           controller?.agentHost?.agentPage(self, mayLoad: url) == false {
+            decisionHandler(.cancel)
+            return
+        }
+
         if let url = navigationAction.request.url,
             navigationAction.targetFrame?.isMainFrame == true
         {

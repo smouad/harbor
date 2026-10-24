@@ -42,7 +42,7 @@ extension TabsController {
 
     /// Makes `itemID` the agent's tab. Windows showing the Agent space show it; the others only
     /// remember it for when the person opens the space. The page loads either way.
-    func selectForAgent(_ itemID: UUID) {
+    public func selectForAgent(_ itemID: UUID) {
         guard let agent = agentSpaceID, tree.spaceID(of: itemID) == agent else { return }
         agentItemID = itemID
         for other in regularWindows {

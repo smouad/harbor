@@ -471,12 +471,15 @@ struct SpacesSideBarView: View {
 }
 
 /// The Agent space while the window shows another: a click opens it, and the icon pulses while a
-/// tool call runs.
+/// tool call runs, in an active window only. Each pulse frame waits for the window server to show
+/// the last one, and a window covered by another app is never shown: the pulse then held the main
+/// thread, and with it the agent's own call, which kept the pulse going.
 private struct AgentSpaceRow: View {
     let tabCount: Int
     let busy: Bool
     let toggle: () -> Void
     @State private var isHovering = false
+    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         Button(action: toggle) {
@@ -485,7 +488,7 @@ private struct AgentSpaceRow: View {
                     .font(.system(size: HarborDesign.Size.rowGlyph, weight: .medium))
                     .foregroundStyle(HarborDesign.Surface.agentGradient)
                     .frame(width: HarborDesign.Size.favicon)
-                    .symbolEffect(.pulse, isActive: busy)
+                    .symbolEffect(.pulse, isActive: busy && activeState != .inactive)
                 Text("Agent · \(tabCount) \(tabCount == 1 ? "tab" : "tabs")")
                     .font(HarborDesign.Font.body)
                 Spacer(minLength: 0)
