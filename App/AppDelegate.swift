@@ -60,6 +60,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // updaterController is lazy and starts Sparkle on first use; without this, scheduled checks never run.
+        _ = updaterController
         setupURLEventHandling()
         setupMouseButtonHandling()
         setupSleepWakeHandling()
