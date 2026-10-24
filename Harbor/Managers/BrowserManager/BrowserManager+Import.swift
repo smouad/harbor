@@ -4,10 +4,12 @@
 //  Harbor
 //
 
+import AppKit
 import Foundation
 import HarborTabsCore
 import HarborWeb
 import SwiftUI
+import WebKit
 
 extension BrowserManager {
     /// Imports Arc's spaces in Arc's order, each with its own pinned tabs and folders, open tabs,
@@ -20,6 +22,8 @@ extension BrowserManager {
 
         var lastSpace = tabs.orderedSpaces.last?.id
         var firstImported: UUID?
+        var profiles: [(space: UUID, profile: ChromiumProfile)] = []
+        let known = ChromiumReader(browser: .arc).profiles()
         for space in result.spaces {
             guard let spaceID = tabs.createSpace(
                 name: space.title, icon: space.emoji ?? "person.fill",
@@ -27,6 +31,8 @@ extension BrowserManager {
             ) else { continue }
             lastSpace = spaceID
             firstImported = firstImported ?? spaceID
+            profiles.append((spaceID, known.first { $0.directory == space.profileDirectory }
+                ?? ChromiumProfile(directory: space.profileDirectory, name: space.title)))
             importTabs(space.unpinned.map(\.url), into: .tabs(spaceID: spaceID), window: window)
             importItems(space.pinned, into: .pinned(spaceID: spaceID), window: window)
             importTabs(space.favorites.map(\.url), into: .favorites(spaceID: spaceID), window: window)
@@ -36,6 +42,7 @@ extension BrowserManager {
             tabs.setSpace(firstImported, in: window)
             tabs.deleteSpace(original)
         }
+        await importChromiumData(.arc, targets: profiles)
     }
 
     /// No favorites, nothing pinned and at most the one tab a first launch opens.
@@ -65,6 +72,21 @@ extension BrowserManager {
 
         importTabs(result.favoriteTabs.map(\.url), into: .favorites(spaceID: spaceID), window: window)
         importTabs(result.windowTabs.map(\.url), into: .tabs(spaceID: spaceID), window: window)
+
+        // Dia's first profile goes into this space. Each other profile is its own sign-in context,
+        // as an Arc space is, so it becomes a space of its own.
+        let profiles = ChromiumReader(browser: .dia).profiles()
+        var targets: [(space: UUID, profile: ChromiumProfile)] = []
+        var lastSpace = tabs.orderedSpaces.last?.id
+        for (index, profile) in profiles.enumerated() {
+            if index == 0 {
+                targets.append((spaceID, profile))
+            } else if let created = tabs.createSpace(name: profile.name, icon: "person.fill", accentHex: "#7C7C7C", after: lastSpace) {
+                lastSpace = created
+                targets.append((created, profile))
+            }
+        }
+        await importChromiumData(.dia, targets: targets)
     }
 
     func importSafariData(from directoryURL: URL, importBookmarks: Bool, importHistory: Bool) async {
@@ -104,6 +126,67 @@ extension BrowserManager {
                 return HistoryVisit(url: url, title: entry.title, timestamp: entry.visitDate,
                                     tabId: nil, profileId: profileId)
             })
+        }
+    }
+
+    // MARK: - Chromium data
+
+    /// Brings each profile's accounts (its cookies), history and bookmarks into the space it became,
+    /// and saves its passwords to a CSV for the person's password manager. The keychain asks the
+    /// person before the key that unlocks cookies and passwords is read; if they decline, those two
+    /// are skipped and history and bookmarks still come over.
+    func importChromiumData(_ browser: ChromiumBrowser, targets: [(space: UUID, profile: ChromiumProfile)]) async {
+        guard browser.isInstalled, !targets.isEmpty, let window = importWindow else { return }
+        let reader = ChromiumReader(browser: browser)
+        let key = await Task.detached { reader.encryptionKey() }.value
+
+        var passwords: [ChromiumLogin] = []
+        for (spaceID, profile) in targets {
+            let found = await Task.detached {
+                (cookies: key.map { reader.cookies(in: profile, key: $0) } ?? [],
+                 logins: key.map { reader.logins(in: profile, key: $0) } ?? [],
+                 history: reader.history(in: profile),
+                 bookmarks: reader.bookmarks(in: profile))
+            }.value
+
+            if let store = tabs.profile(forSpace: spaceID)?.dataStore.httpCookieStore {
+                for cookie in found.cookies { await store.setCookie(cookie) }
+            }
+            historyManager.importVisits(found.history.compactMap { visit in
+                URL(string: visit.url).map {
+                    HistoryVisit(url: $0, title: visit.title, timestamp: visit.date, tabId: nil, profileId: spaceID)
+                }
+            })
+            if !found.bookmarks.isEmpty {
+                func item(_ bookmark: ChromiumBookmark) -> ArcItem {
+                    switch bookmark {
+                    case .page(let title, let url): return .tab(ArcTab(title: title, url: url))
+                    case .folder(let title, let items): return .folder(ArcFolder(title: title, items: items.map(item)))
+                    }
+                }
+                importItems(found.bookmarks.map(item), into: .pinned(spaceID: spaceID), window: window)
+            }
+            passwords += found.logins
+        }
+        exportPasswords(passwords, from: browser)
+    }
+
+    /// Writes the passwords where the person can import them, readable by them alone, and says so.
+    /// Harbor keeps no passwords of its own: a password manager extension, or the Passwords app,
+    /// holds them.
+    private func exportPasswords(_ logins: [ChromiumLogin], from browser: ChromiumBrowser) {
+        guard !logins.isEmpty,
+              let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+        let file = downloads.appendingPathComponent("\(browser.name) passwords.csv")
+        guard FileManager.default.createFile(atPath: file.path, contents: Data(PasswordCSV.make(logins).utf8),
+                                             attributes: [.posixPermissions: 0o600]) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Your \(browser.name) passwords are in a file"
+        alert.informativeText = "Harbor saved \(logins.count) passwords to “\(file.lastPathComponent)” in Downloads. Import it into Passwords, 1Password or Bitwarden, then delete it: anyone who can open the file can read every password in it."
+        alert.addButton(withTitle: "Show in Finder")
+        alert.addButton(withTitle: "Done")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([file])
         }
     }
 

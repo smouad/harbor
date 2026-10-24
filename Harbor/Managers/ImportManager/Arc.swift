@@ -22,6 +22,8 @@ struct ArcImportResult {
 struct ArcSpace {
     let id: String
     let title: String
+    /// The Chromium profile folder holding the space's cookies and history: "Default", "Profile 1".
+    let profileDirectory: String
     let emoji: String?
     /// The space's theme color as `#RRGGBB`, when Arc has one.
     let accentHex: String?
@@ -126,6 +128,7 @@ func parseArcSidebarData(from fileURL: URL) throws -> ArcImportResult {
         return ArcSpace(
             id: id,
             title: (space["title"] as? String) ?? "Space",
+            profileDirectory: profileKey(space["profile"]).map(profileDirectory) ?? "Default",
             emoji: iconType?["emoji_v2"] as? String,
             accentHex: accentHex(fromTheme: customInfo?["windowTheme"] as? [String: Any]),
             favorites: flattened(entries(under: favorites)),
@@ -134,6 +137,11 @@ func parseArcSidebarData(from fileURL: URL) throws -> ArcImportResult {
         )
     }
     return ArcImportResult(spaces: result)
+}
+
+/// The profile folder a `profileKey` names.
+private func profileDirectory(_ key: String) -> String {
+    key.hasPrefix("custom:") ? String(key.dropFirst("custom:".count)) : "Default"
 }
 
 /// A key that is the same for a space's `profile` and the matching `topAppsContainerIDs` entry:
