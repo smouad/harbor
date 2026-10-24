@@ -35,7 +35,7 @@ struct AgentTool {
         var properties = properties
         if page == .agent {
             properties["task"] = ["type": "string", "description": "Task id from task_start; omit for the Agent space's current tab"]
-            properties["tab"] = ["type": "string", "description": "One of the person's own tabs instead: \"current\" or an id from tabs. Only when they allow it in Settings > Developer"]
+            properties["tab"] = ["type": "string", "description": "One of the person's own tabs: \"current\" or an id from tabs, or \"agent\" for the Agent space. With Settings > Developer > Your tabs on Any tab (the default) a call without task or tab works in the person's current tab"]
         }
         var schema: [String: Any] = ["type": "object", "properties": properties]
         if !required.isEmpty { schema["required"] = required }
@@ -255,7 +255,14 @@ enum AgentToolbox {
             }
             let task = tool.page == .agent ? named : nil
             let session: PageSession?
-            if tool.page == .agent, let tab = args.string("tab"), tab != "agent" {
+            // With Any tab (the default), a call that names no task or tab works in the person's
+            // current tab, as Browser Bridge does; "agent" asks for the Agent space instead.
+            var tabArg = args.string("tab")
+            if tool.page == .agent, task == nil, tabArg == nil, browser.tabs.settings.agentTabAccess == .always,
+               let selected = window.selectedItemID, !browser.tabs.isInAgentSpace(selected) {
+                tabArg = "current"
+            }
+            if tool.page == .agent, let tab = tabArg, tab != "agent" {
                 if task != nil { throw AgentError.invalid("Pass task or tab, not both") }
                 // A call that opens a page asks about that page's site.
                 let toward = args.string("url").flatMap(AgentURLs.web)

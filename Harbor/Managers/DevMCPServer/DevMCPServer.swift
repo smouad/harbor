@@ -366,12 +366,15 @@ final class DevMCPServer {
         // every agent writes) is a syntax error. Here it is another name for
         // `evaluate`, which runs the code as an async function body.
         let name = rawName == "executeJavaScript" ? "evaluate" : rawName
-        // Everything but pick and selection works in the Agent space, whatever the window shows,
-        // through a regular window: a private one holds no Agent space. No window is ever opened.
-        let forPerson = Self.humanTools.contains(name)
+        // Pick and selection work on what the person's window shows. The rest work in the person's
+        // current tab when Settings > Developer > Your tabs is Any tab (the default, as Browser
+        // Bridge does), else in the Agent space, either way through a regular window: agents never
+        // touch a private one. No window is ever opened.
+        let humanTool = Self.humanTools.contains(name)
+        let forPerson = humanTool || browserManager?.tabs.settings.agentTabAccess == .always
         let active = humanWindow
         guard let bm = browserManager,
-              let window = forPerson ? active : (active?.privateTree == nil ? active : bm.tabs.regularWindows.first)
+              let window = humanTool ? active : (active?.privateTree == nil ? active : bm.tabs.regularWindows.first)
         else { return text("No browser window", error: true) }
         if let tool = AgentToolbox.tool(named: name) {
             return await AgentToolbox.run(tool, args: args, browser: bm, window: window, budget: Self.toolTimeout - 2)
@@ -388,6 +391,10 @@ final class DevMCPServer {
         // A task's tab answers to the agent tools with `task`, where its pause, sites and
         // approvals apply; these older tools would go around them.
         if !forPerson, !Self.tabListTools.contains(name), let refusal = AgentToolbox.taskTabRefusal(bm) {
+            return text(refusal, error: true)
+        }
+        if forPerson, !humanTool, !Self.tabListTools.contains(name),
+           let selected = window.selectedItemID, let refusal = AgentToolbox.taskTabRefusal(item: selected) {
             return text(refusal, error: true)
         }
 
@@ -413,7 +420,7 @@ final class DevMCPServer {
             switch name {
             case "evaluate":
                 guard let wv = webView else { return text("No active tab", error: true) }
-                if !forPerson, await AgentRuntime.secretTyped(in: wv) { return text(AgentRuntime.secretScriptRefusal, error: true) }
+                if !humanTool, await AgentRuntime.secretTyped(in: wv) { return text(AgentRuntime.secretScriptRefusal, error: true) }
                 let code = args["code"] as? String ?? ""
                 let world: WKContentWorld = args["world"] as? String == "isolated" ? .defaultClient : .page
                 var saveURL: URL?

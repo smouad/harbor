@@ -275,7 +275,8 @@ public final class HarborSettingsService {
     }
 
     /// Whether Browser Control's agents may work in the person's own tabs, not only the Agent
-    /// space: never, after the person allows each tab, or always.
+    /// space: never, after the person allows each tab, or always. Always (the default) also makes
+    /// the person's current tab where agents work unless told otherwise, as with Browser Bridge.
     public var agentTabAccess: AgentTabAccess {
         didSet { userDefaults.set(agentTabAccess.rawValue, forKey: agentTabAccessKey) }
     }
@@ -513,7 +514,7 @@ public final class HarborSettingsService {
             searchPageTextInHistoryKey: true,
             hideWebContentBorderKey: false,
             didFinishOnboardingKey: false,
-            agentTabAccessKey: AgentTabAccess.off.rawValue,
+            agentTabAccessKey: AgentTabAccess.always.rawValue,
             agentExtensionsKey: true,
             agentPresentsAsChromeKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
@@ -606,7 +607,7 @@ public final class HarborSettingsService {
         self.browserControlServerEnabled = browserControlOn
         // Browser Control predates Developer Mode, so anyone who had it on keeps it reachable.
         self.developerModeEnabled = userDefaults.object(forKey: developerModeKey) as? Bool ?? browserControlOn
-        self.agentTabAccess = AgentTabAccess(rawValue: userDefaults.string(forKey: agentTabAccessKey) ?? "") ?? .off
+        self.agentTabAccess = AgentTabAccess(rawValue: userDefaults.string(forKey: agentTabAccessKey) ?? "") ?? .always
         self.agentExtensionsEnabled = userDefaults.bool(forKey: agentExtensionsKey)
         self.agentPresentsAsChrome = userDefaults.bool(forKey: agentPresentsAsChromeKey)
         self.chromeIdentitySites = userDefaults.stringArray(forKey: chromeIdentitySitesKey) ?? []

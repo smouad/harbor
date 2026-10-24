@@ -4,8 +4,8 @@
 #
 #   scripts/tests/agent-copy.sh [build|launch|quit|token|port|files]   (default: build + launch)
 #
-# HARBOR_AGENT_TAB_ACCESS (off, ask or always; default always) sets how far agents reach into the
-# copy's own tabs, so agent_e2e.py can check each.
+# HARBOR_AGENT_TAB_ACCESS (off, ask or always; default off, so the checks run in the Agent space)
+# sets how far agents reach into the copy's own tabs, so agent_e2e.py can check each.
 #
 # The copy is com.mouad.harbor.agent on port 47911, so it never touches com.mouad.harbor. Each
 # bundle id gets its own app path and files folder, so two sessions running copies under different
@@ -49,7 +49,7 @@ launch() {
     defaults write $bundle_id settings.didFinishOnboarding -bool true
     defaults write $bundle_id settings.developerMode -bool true
     defaults write $bundle_id settings.browserControlServer -bool true
-    defaults write $bundle_id settings.agentTabAccess -string "${HARBOR_AGENT_TAB_ACCESS:-always}"
+    defaults write $bundle_id settings.agentTabAccess -string "${HARBOR_AGENT_TAB_ACCESS:-off}"
     mkdir -p "$files"
     # Debug builds install the test extension without its consent sheet (agent_e2e.py checks
     # that extensions run in agent tabs); a Release copy ignores the argument.
