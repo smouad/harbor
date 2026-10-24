@@ -24,11 +24,18 @@ enum AgentOnDevice {
 
     // MARK: - Critic
 
-    /// Why the action looks unrelated to the goal, or nil when it fits (or the model is not there).
-    /// The model sees the goal and the action's metadata: the verb, the control's role and name
-    /// (which the page wrote) and the site; never the page's text.
-    static func offGoalReason(goal: String, facts: AgentActionFacts) async -> String? {
-        guard isAvailable else { return nil }
+    enum Verdict {
+        case fits
+        case off(String)
+        /// No answer: the model is missing, slow or failed.
+        case unknown
+    }
+
+    /// Whether the action fits the task's goal. The model sees the goal and the action's metadata:
+    /// the verb, the control's role and name (which the page wrote) and the site; never the
+    /// page's text.
+    static func critic(goal: String, facts: AgentActionFacts) async -> Verdict {
+        guard isAvailable else { return .unknown }
         let verdict = DynamicGenerationSchema(name: "Verdict", properties: [
             .init(name: "fits", description: "fits when the action is a plausible step toward the goal, off when it does something the goal did not ask for",
                   schema: DynamicGenerationSchema(name: "Fit", anyOf: ["fits", "off"])),
@@ -48,15 +55,15 @@ enum AgentOnDevice {
         do {
             let schema = try GenerationSchema(root: verdict, dependencies: [])
             let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 60)
-            let content = await AgentDeadline.run(4) {
+            guard let content = await AgentDeadline.run(4, {
                 try await session.respond(to: prompt, schema: schema, options: options).content
-            }
-            guard let content, try content.value(String.self, forProperty: "fits") == "off" else { return nil }
+            }) else { return .unknown }
+            guard try content.value(String.self, forProperty: "fits") == "off" else { return .fits }
             let why = (try? content.value(String.self, forProperty: "why")) ?? ""
-            return why.isEmpty ? "Looks unrelated to the task's goal" : "Looks unrelated to the goal: \(why)"
+            return .off(why.isEmpty ? "Looks unrelated to the task's goal" : "Looks unrelated to the goal: \(why)")
         } catch {
             AgentHub.log.notice("Critic skipped: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return .unknown
         }
     }
 

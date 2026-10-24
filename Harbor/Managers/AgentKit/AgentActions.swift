@@ -58,6 +58,11 @@ final class AgentActions {
     /// Runs one step and returns its value (getText, getValue, eval, …) or nil.
     func perform(_ raw: [String: Any]) async throws -> Any? {
         try Task.checkCancellation()
+        // Checked before every step: the person may stop or take the task in the middle of a batch.
+        if let task {
+            if task.isFinished { throw AgentError.invalid("Task \(task.id) has ended") }
+            if task.isPausedForPerson { throw AgentError.paused(task.title) }
+        }
         let step = AgentTemplate.fill(raw, scopes: ["vars": vars]) as? [String: Any] ?? raw
         guard let action = step["action"] as? String else { throw StepError.invalid("Each step needs an action") }
         let target = step["target"] as? String
@@ -105,6 +110,11 @@ final class AgentActions {
             if native {
                 let current = try await runtime("checked", ["target": target]) as? Bool ?? false
                 if current != want { try await nativeClick(target, step: step) }
+                // The state says whether the press landed, so finishing it in the DOM cannot
+                // toggle twice.
+                if try await runtime("checked", ["target": target]) as? Bool != want {
+                    _ = try await runtime("check", ["target": target, "on": want])
+                }
             } else {
                 _ = try await runtime("check", ["target": target, "on": want])
             }
@@ -130,6 +140,7 @@ final class AgentActions {
                     try AgentInput.hover(webView, x: x, y: y, viewport: viewport)
                 }
                 lastPointer = CGPoint(x: x, y: y)
+                await AgentInput.afterPendingMouseEvents(webView)
             }
             // WebKit drops pointer moves for a page in the hidden host, so hover menus also get
             // the DOM's pointer events.
@@ -230,24 +241,12 @@ final class AgentActions {
             try await Task.sleep(for: .milliseconds(Int.random(in: 60...160)))
         }
         lastPointer = CGPoint(x: x, y: y)
-        // A page just put back into its host may not know where it is yet, and drops the press.
-        // Watch for the press to arrive; try once more, then fall back to a DOM click.
-        let probe: [String: Any] = target.map { ["target": $0] } ?? [:]
-        for attempt in 0..<2 {
-            let before = try await runtime("presses", probe) as? [String: Any] ?? [:]
-            try AgentInput.click(webView, x: x, y: y, viewport: viewport, clickCount: clickCount)
-            for _ in 0..<6 {
-                // A load or a new document means the press did something: never press again.
-                guard !webView.isLoading, let now = try? await runtime("presses", probe) as? [String: Any],
-                      now["document"] as? String == before["document"] as? String else { return }
-                if (now["count"] as? Int ?? 0) > (before["count"] as? Int ?? 0) { return }
-                try await Task.sleep(for: .milliseconds(50))
-            }
-            if attempt == 0 { try await Task.sleep(for: .milliseconds(150)) }
-        }
-        guard let target else { throw StepError.invalid("The click did not reach the page") }
-        AgentHub.log.notice("Native click did not land; used a DOM click on \(target, privacy: .public)")
-        _ = try await runtime("click", ["target": target])
+        // A page just put back into its host learns where it is a moment later and drops a press
+        // sent before that; one animation frame in the page comes after it. The press is never
+        // repeated: a page may hide it from any check, and pressing twice could buy twice.
+        _ = try? await runtime("frame", [:])
+        try AgentInput.click(webView, x: x, y: y, viewport: viewport, clickCount: clickCount)
+        await AgentInput.afterPendingMouseEvents(webView)
     }
 
     private func scroll(target: String?, step: [String: Any], native: Bool) async throws -> Any? {
@@ -327,20 +326,30 @@ final class AgentActions {
         var facts = AgentActionFacts(action: action)
         facts.host = webView.url?.host ?? ""
         facts.url = webView.url?.absoluteString ?? ""
-        facts.key = step["key"] as? String ?? ""
-        facts.typedSecret = !AgentPlaceholders.names(in: step["text"] as? String ?? "").isEmpty
-        if let target, let element = try? await runtime("describe", ["target": target]) as? [String: Any] {
+        facts.key = step["key"] as? String ?? (action == "press" ? step["text"] as? String ?? "" : "")
+        facts.text = step["text"] as? String ?? step["value"] as? String ?? (action == "eval" ? step["code"] as? String ?? "" : "")
+        facts.typedSecret = !AgentPlaceholders.names(in: facts.text).isEmpty
+        var element: [String: Any]?
+        if let target {
+            element = try? await runtime("describe", ["target": target]) as? [String: Any]
+        } else if action == "click", let x = step["x"], let y = step["y"] {
+            // A click by position is judged by what is under it, so it cannot go around the rules.
+            element = try? await runtime("describeAt", ["x": x, "y": y]) as? [String: Any]
+            facts.crossOriginFrame = element?["crossOrigin"] as? Bool == true
+        } else if action == "press" {
+            element = try? await runtime("describe", ["target": ":focus"]) as? [String: Any]
+        }
+        if let element {
             facts.role = element["role"] as? String ?? ""
             facts.name = element["name"] as? String ?? ""
             facts.inputType = element["type"] as? String ?? ""
-        }
-        if action == "press", target == nil, let focused = try? await runtime("describe", ["target": ":focus"]) as? [String: Any] {
-            facts.inputType = focused["type"] as? String ?? ""
-            facts.name = focused["name"] as? String ?? ""
+            facts.element = element["ref"] as? String ?? ""
         }
         if action == "navigate" { facts.host = URL(string: step["url"] as? String ?? "")?.host ?? "" }
-        if let pending = await AgentHub.shared.approvals.gate(task: task, facts: facts) {
-            throw StepError.needsApproval(id: pending.id, reason: pending.reason)
+        switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
+        case .allowed: return
+        case .needsApproval(let request): throw StepError.needsApproval(id: request.id, reason: request.reason)
+        case .refused(let why): throw StepError.invalid(why)
         }
     }
 }

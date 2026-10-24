@@ -118,7 +118,14 @@ def test(fn):
 
 
 def open_page(name):
-    return call("read", {"url": f"{BASE}/{name}"})
+    """Opens a fixture in the Agent space's current tab, or a tab of its own when that one is a task's."""
+    try:
+        return call("read", {"url": f"{BASE}/{name}"})
+    except ToolError as error:
+        if "belongs to task" not in str(error):
+            raise
+        call("createTab", {"url": f"{BASE}/{name}"})
+        return call("read", {"url": f"{BASE}/{name}"})
 
 
 @test
@@ -301,17 +308,23 @@ def tasks_scope_approvals_handoff_replay():
     assert call("approval_wait", {"approval": held["needs_approval"], "timeout": 1})["decision"] == "pending"
     state = call("act", {"task": task, "actions": [{"action": "getText", "target": "#order-state"}]})
     assert state["results"][0]["value"] == "no order", "nothing happened before approval"
+    buy = next(e for e in call("observe", {"task": task})["elements"] if e["name"] == "Place order")
+    by_point = call("act", {"task": task, "actions": [{"action": "click", "x": buy["x"] + buy["w"] // 2, "y": buy["y"] + buy["h"] // 2}]})
+    assert by_point["needs_approval"] and by_point["results"][0]["reason"] == "Spends money", "a click by position is judged too"
     blocked = call("act", {"task": task, "actions": [{"action": "navigate", "url": "https://example.com/"}]}, expect_error=True)
     assert "outside this task's allowed sites" in blocked
+    call("task_start", {"title": "E2E", "confirm": "never"}, expect_error=True)
+    steps = call("task_replay", {"task": task})["steps"]
+    assert [s["tool"] for s in steps][:2] == ["act", "act"] and steps[0]["ok"] is False, steps[:2]
     call("task_handoff", {"task": task, "reason": "Sign in"})
     paused = call("act", {"task": task, "actions": [{"action": "click", "target": "#save"}]}, expect_error=True)
     assert "the person has control" in paused
     assert call("task_wait", {"task": task, "timeout": 1})["status"] == "needs_you"
-    ended = call("task_end", {"task": task, "outcome": "done", "summary": "ok", "closeTab": True})
-    assert ended["status"] == "done"
-    call("task_start", {"title": "E2E", "confirm": "never"}, expect_error=True)
-    steps = call("task_replay", {"task": task})["steps"]
-    assert [s["tool"] for s in steps][:2] == ["act", "act"] and steps[0]["ok"] is False, steps[:2]
+    refused = call("task_end", {"task": task, "outcome": "done"}, expect_error=True)
+    assert "the person has control" in refused, "a task the person holds cannot be ended under them"
+    removed = call("closeTabs", {"regular": True})
+    assert any(t["task"] == task for t in call("task_list")), removed
+    assert "belongs to task" in call("observe", expect_error=True), "the task's tab survived closeTabs"
 
 
 @test
@@ -323,8 +336,8 @@ def calls_without_task_leave_task_tabs_alone():
         assert "belongs to task" in text, (tool, text)
     script = call("act", {"task": task, "actions": [{"action": "eval", "code": "return 1"}]}, expect_error=True)
     assert "the person has control" in script
-    call("task_end", {"task": task, "outcome": "done"})
-    assert call("evaluate", {"code": "return 2"}) == 2, "an ended task's tab is free again"
+    call("createTab", {"url": f"{BASE}/article.html"})
+    assert call("evaluate", {"code": "return 2"}) == 2, "a tab of its own is free"
 
 
 @test

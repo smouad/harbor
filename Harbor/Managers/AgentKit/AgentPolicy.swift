@@ -19,8 +19,13 @@ enum AgentScope {
     static func allows(_ url: URL, origins: [String]) -> Bool {
         guard !origins.isEmpty else { return true }
         guard let scheme = url.scheme?.lowercased() else { return false }
-        // Pages that are not a site carry no new origin.
-        if ["about", "data", "blob"].contains(scheme) { return true }
+        // about:blank carries no origin; a blob: URL carries the origin it was made by; a data:
+        // document has none to check, so a scoped tab does not open one.
+        if scheme == "about" { return true }
+        if scheme == "blob" {
+            guard let inner = URL(string: String(url.absoluteString.dropFirst("blob:".count))), inner.scheme != "blob" else { return false }
+            return allows(inner, origins: origins)
+        }
         guard let host = url.host?.lowercased() else { return false }
         return origins.contains { matches(host: host, scheme: scheme, port: url.port, entry: $0) }
     }
@@ -52,6 +57,38 @@ enum AgentPlaceholders {
         }
     }
 
+    /// `text` with each value put back as its placeholder, raw or in the encodings a page passes
+    /// it on in (a form's URL, a request body, JSON). Values shorter than four characters are left:
+    /// they would match ordinary text.
+    static func scrub(_ text: String, values: [String: String]) -> String {
+        var out = text
+        for (name, value) in values where value.count >= 4 {
+            for form in encodings(of: value) where out.contains(form) {
+                out = out.replacingOccurrences(of: form, with: "{{secret:\(name)}}")
+            }
+        }
+        return out
+    }
+
+    static func encodings(of value: String) -> [String] {
+        var forms = [value]
+        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        if let percent = value.addingPercentEncoding(withAllowedCharacters: unreserved) {
+            forms.append(percent)
+            forms.append(percent.replacingOccurrences(of: "%20", with: "+"))
+            forms.append(percent.lowercased())
+        }
+        // JSON as a page writes it (JSON.stringify leaves "/" alone) and as Foundation does.
+        for options: JSONSerialization.WritingOptions in [[.fragmentsAllowed, .withoutEscapingSlashes], [.fragmentsAllowed]] {
+            if let data = try? JSONSerialization.data(withJSONObject: value, options: options),
+               let json = String(data: data, encoding: .utf8) {
+                forms.append(String(json.dropFirst().dropLast()))
+            }
+        }
+        // Longest first, so a whole encoded form is replaced before a piece of it.
+        return Array(Set(forms)).sorted { $0.count > $1.count }
+    }
+
     /// `text` with each placeholder replaced by `lookup(name)`; nil when any name has no value.
     static func fill(_ text: String, lookup: (String) -> String?) -> String? {
         var out = ""
@@ -81,6 +118,12 @@ struct AgentActionFacts {
     var url: String = ""
     var key: String = ""
     var typedSecret = false
+    /// Which element (its ref), so an approval covers that control and no other.
+    var element: String = ""
+    /// The text the step types, as written (placeholders, never secret values).
+    var text: String = ""
+    /// The point clicked lies in a frame from another site, whose content Harbor cannot see.
+    var crossOriginFrame = false
 }
 
 enum AgentSensitivity {
@@ -91,6 +134,7 @@ enum AgentSensitivity {
         // A script can do anything a click can, and read what was typed: one approval covers
         // the task's scripts for a while (the grant is per task, not per script).
         if action == "eval" { return "Runs a script on \(facts.host.isEmpty ? "the page" : facts.host)" }
+        if facts.crossOriginFrame { return "Clicks inside a frame from another site" }
         if ["click", "submit", "check", "press"].contains(action) {
             for (words, why) in rules where words.contains(where: { matchesWord($0, in: name) }) {
                 return why
@@ -104,6 +148,13 @@ enum AgentSensitivity {
         }
         if action == "upload" { return "Uploads a file to \(facts.host.isEmpty ? "the site" : facts.host)" }
         return nil
+    }
+
+    /// Approvals that count once: spending, sending, deleting and moving money are approved per
+    /// action, not for a while.
+    static func isSingleUse(_ reason: String) -> Bool {
+        ["Spends money", "Sends or publishes something", "Deletes something", "Moves money", "Enters payment details"].contains(reason)
+            || reason.hasPrefix("Uploads")
     }
 
     private static let payment = ["card number", "credit card", "cvv", "cvc", "security code", "iban", "expiry", "expiration"]

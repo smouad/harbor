@@ -33,6 +33,10 @@ struct AgentPolicyCheck {
         precondition(!allows("http://localhost:3001/", ["http://localhost:3000"]), "an origin's port must match")
         precondition(!allows("https://localhost:3000/", ["http://localhost:3000"]), "an origin's scheme must match")
         precondition(allows("about:blank", ["example.com"]), "about:blank carries no origin")
+        precondition(allows("blob:https://example.com/123", ["example.com"]), "a blob: URL carries its maker's origin")
+        precondition(!allows("blob:https://evil.net/123", ["example.com"]))
+        precondition(!allows("data:text/html,hi", ["example.com"]), "a scoped tab opens no data: document")
+        precondition(allows("data:text/html,hi", []))
         precondition(!allows("https://other.org/", ["example.com", "example.net"]))
         precondition(allows("https://WWW.Example.COM/", ["example.com"]), "hosts compare case-insensitively")
         precondition(allows("https://example.com/", ["example.com/some/path"]), "a path in an entry is ignored")
@@ -45,6 +49,12 @@ struct AgentPolicyCheck {
         precondition(AgentPlaceholders.fill("user:{{secret:pw}}!{{secret:k}}", lookup: { values[$0] }) == "user:hunter2!K")
         precondition(AgentPlaceholders.fill("{{secret:missing}}", lookup: { values[$0] }) == nil, "an unknown secret types nothing")
         precondition(AgentPlaceholders.fill("no secrets", lookup: { _ in nil }) == "no secrets")
+        let typed = ["pw": "p@ss word/1\"x"]
+        let scrubbed = AgentPlaceholders.scrub(
+            "url=/login?pw=p%40ss+word%2F1%22x body={\"pw\":\"p@ss word/1\\\"x\"} raw p@ss word/1\"x", values: typed)
+        precondition(!scrubbed.contains("p@ss") && !scrubbed.contains("p%40ss"), scrubbed)
+        precondition(scrubbed.components(separatedBy: "{{secret:pw}}").count == 4, scrubbed)
+        precondition(AgentPlaceholders.scrub("abc and abc", values: ["s": "abc"]) == "abc and abc", "short values are left")
     }
 
     static func sensitivity() {
@@ -74,6 +84,10 @@ struct AgentPolicyCheck {
         precondition(reason("press", role: "textbox", name: "Password", type: "password", key: "Enter") == "Signs in")
         precondition(reason("scroll") == nil)
         precondition(reason("eval", role: "", name: "") == "Runs a script on shop.example", "scripts ask once per task")
+        var framed = AgentActionFacts(action: "click")
+        framed.crossOriginFrame = true
+        precondition(AgentSensitivity.reason(for: framed) == "Clicks inside a frame from another site")
+        precondition(AgentSensitivity.isSingleUse("Spends money") && !AgentSensitivity.isSingleUse("Signs in or grants access"))
         precondition(AgentSensitivity.matchesWord("pay", in: "display then pay now"), "a later whole-word hit counts")
     }
 

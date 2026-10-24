@@ -91,6 +91,33 @@ enum AgentInput {
         try deliver { webView.scrollWheel(with: event) }
     }
 
+    /// Until WebKit has handed every mouse event sent so far to the page. It queues each event
+    /// until the page acknowledges the one before, so a script run right after a click could run
+    /// before the press: a checkbox read as unchanged, a second click toggled it back.
+    static func afterPendingMouseEvents(_ webView: WKWebView) async {
+        let selector = NSSelectorFromString("_doAfterProcessingAllPendingMouseEvents:")
+        guard webView.responds(to: selector) else { return }
+        typealias After = @convention(c) (AnyObject, Selector, @convention(block) () -> Void) -> Void
+        let after = unsafeBitCast(webView.method(for: selector), to: After.self)
+        final class Once {
+            var continuation: CheckedContinuation<Void, Never>?
+            func resume() {
+                continuation?.resume()
+                continuation = nil
+            }
+        }
+        _ = await AgentDeadline.run(2) {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let once = Once()
+                once.continuation = continuation
+                // Made outside the guarded call: WebKit keeps this block, and a block made inside
+                // that non-escaping closure would carry its context out with it.
+                let done: @convention(block) () -> Void = { once.resume() }
+                if HarborCatchObjCException({ after(webView, selector, done) }) != nil { once.resume() }
+            }
+        }
+    }
+
     // MARK: - Keyboard
 
     /// Presses a key such as "Enter", "Tab", "ArrowDown", "a", or a chord such as "Meta+a",

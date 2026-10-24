@@ -80,8 +80,10 @@ extension AgentToolbox {
             facts.role = "site tool"
             facts.name = name.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
             facts.host = webView.url?.host ?? ""
-            if let pending = await AgentHub.shared.approvals.gate(task: task, facts: facts) {
-                return .json(["ok": false, "needs_approval": pending.id, "reason": pending.reason])
+            switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
+            case .allowed: break
+            case .needsApproval(let request): return .json(["ok": false, "needs_approval": request.id, "reason": request.reason])
+            case .refused(let why): throw AgentError.invalid(why)
             }
         }
         let arguments = call.args.object("arguments") ?? [:]

@@ -152,9 +152,10 @@ struct AgentResult {
     }
 
     /// A job's status. Once it holds a result or a repair, that came from pages.
+    /// A job's status: its result, repair, error and progress message can all come from pages.
     @MainActor
     static func job(_ job: AgentJob) -> AgentResult {
-        job.result != nil || job.repair != nil ? .untrusted(job.summary, origin: nil) : .json(job.summary)
+        .untrusted(job.summary, origin: nil)
     }
 
     func appending(_ other: AgentResult) -> AgentResult {
@@ -253,7 +254,10 @@ enum AgentToolbox {
                                  task: task, session: session, webView: webView, budget: budget)
             result = try await tool.run(call)
         } catch {
-            result = .error("\(name) failed: \(error.agentMessage)")
+            // A page tool's error may carry the page's own words (a script's exception).
+            let message = "\(name) failed: \(error.agentMessage)"
+            result = tool.page == .agent ? AgentResult(content: AgentResult.untrusted(message, origin: webView?.url?.host).content, isError: true)
+                : .error(message)
         }
         if let named {
             AgentHub.shared.replay.record(task: named, tool: name, args: raw, result: result, started: started, webView: webView)
@@ -264,10 +268,17 @@ enum AgentToolbox {
     /// Why a call without `task` may not use the Agent space's current tab: it belongs to a task,
     /// whose pause, sites and approvals would not apply. Nil when it may.
     static func taskTabRefusal(_ browser: BrowserManager) -> String? {
-        guard let item = browser.tabs.agentItem, let owner = AgentHub.shared.pages?.task(for: item), !owner.isFinished else {
-            return nil
-        }
-        return "The Agent space's current tab belongs to task \(owner.id) (\(owner.title)). Pass task: \(owner.id), or open another tab with createTab."
+        guard let item = browser.tabs.agentItem else { return nil }
+        return taskTabRefusal(item: item)
+    }
+
+    /// Why a call without `task` may not touch `item`. An ended task's tab stays off limits: the
+    /// person may have typed into it during a handoff, and it is theirs to read.
+    static func taskTabRefusal(item: UUID) -> String? {
+        guard let owner = AgentHub.shared.pages?.owner(of: item) else { return nil }
+        let ended = owner.isFinished ? ", which has ended" : ""
+        let pass = owner.isFinished ? "" : " Pass task: \(owner.id), or"
+        return "That tab belongs to task \(owner.id) (\(owner.title))\(ended).\(pass) Open another tab with createTab."
     }
 
     private static func page(for page: AgentTool.Page, task: AgentTask?, browser: BrowserManager,

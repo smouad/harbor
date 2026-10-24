@@ -29,9 +29,12 @@ extension AgentToolbox {
         if call.args.string("where") == "agent" {
             if let id = call.args.string("task") {
                 guard let task = AgentHub.shared.tasks.task(id) else { throw AgentError.unknownTask(id) }
+                if task.isFinished { throw AgentError.invalid("Task \(task.id) has ended") }
+                if task.isPausedForPerson { throw AgentError.paused(task.title) }
                 webView = try call.browser.agentWebView(item: task.itemID)
                 subject = task.title
             } else {
+                if let refusal = AgentToolbox.taskTabRefusal(call.browser) { throw AgentError.invalid(refusal) }
                 guard let view = try call.browser.agentWebView() else { throw AgentError.noPage }
                 webView = view
                 subject = "Agent"
@@ -150,7 +153,8 @@ extension AgentToolbox {
 
     private static let schedules = AgentTool("schedules", "Scheduled recipes and watched pages.", page: .none) { _ in
         let scheduler = AgentHub.shared.scheduler
-        return .json(["schedules": scheduler.schedules.map(\.json), "watches": scheduler.watches.map(\.json)])
+        // A watch's sample is page text.
+        return .untrusted(["schedules": scheduler.schedules.map(\.json), "watches": scheduler.watches.map(\.json)], origin: nil)
     }
 
     private static let unschedule = AgentTool(
@@ -175,7 +179,7 @@ extension AgentToolbox {
     }
 
     private static let watches = AgentTool("watches", "Watched pages with their last check and how many changes were seen.", page: .none) { _ in
-        .json(AgentHub.shared.scheduler.watches.map(\.json))
+        .untrusted(AgentHub.shared.scheduler.watches.map(\.json), origin: nil)
     }
 
     private static let watchCheck = AgentTool(

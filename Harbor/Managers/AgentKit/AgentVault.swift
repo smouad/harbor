@@ -43,6 +43,8 @@ final class AgentVault {
     }
 
     private(set) var entries: [Entry] = []
+    /// Values typed this session, by name, kept in memory only so `scrub` can find them.
+    @ObservationIgnored private var typed: [String: String] = [:]
 
     nonisolated private static let service = (Bundle.main.bundleIdentifier ?? "Harbor") + ".agent-vault"
     private static var file: URL { AgentHub.directory.appendingPathComponent("vault.json") }
@@ -64,7 +66,9 @@ final class AgentVault {
             guard entry.domains.contains(where: { AgentScope.matches(host: host.lowercased(), scheme: "https", port: nil, entry: $0) }) else {
                 throw VaultError.wrongSite(name, host)
             }
-            values[name] = try await Self.readOffMain(name)
+            let value = try await Self.readOffMain(name)
+            values[name] = value
+            typed[name] = value
         }
         guard let filled = AgentPlaceholders.fill(text, lookup: { values[$0] }) else {
             throw VaultError.unknown(AgentPlaceholders.names(in: text).first ?? "")
@@ -86,11 +90,30 @@ final class AgentVault {
 
     private static let keychainTimeout: Double = 15
 
+    /// `text` with every value typed this session put back as its placeholder, raw or in the
+    /// encodings a page passes it on in (a form's URL, a request body, JSON). The last line of
+    /// defence: a page can echo what was typed into it anywhere.
+    func scrub(_ text: String) -> String {
+        typed.isEmpty ? text : AgentPlaceholders.scrub(text, values: typed)
+    }
+
+    /// The same text as MCP content items, scrubbed.
+    func scrub(content: [[String: Any]]) -> [[String: Any]] {
+        guard !typed.isEmpty else { return content }
+        return content.map { item in
+            guard let text = item["text"] as? String else { return item }
+            var item = item
+            item["text"] = scrub(text)
+            return item
+        }
+    }
+
     // MARK: - For the person (Settings)
 
-    func save(name: String, domains: [String], value: String) throws {
+    /// Off the main thread: a Keychain write may wait on an access prompt.
+    func save(name: String, domains: [String], value: String) async throws {
         guard name.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil else { throw VaultError.badName }
-        try Self.write(name, value: value)
+        try await Task.detached(priority: .userInitiated) { try Self.write(name, value: value) }.value
         let cleaned = domains.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         if let index = entries.firstIndex(where: { $0.name == name }) {
             entries[index].domains = cleaned
@@ -100,11 +123,12 @@ final class AgentVault {
         persist()
     }
 
-    func remove(_ name: String) {
+    func remove(_ name: String) async {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                     kSecAttrService as String: Self.service, kSecAttrAccount as String: name]
-        SecItemDelete(query as CFDictionary)
+        _ = await Task.detached(priority: .userInitiated) { SecItemDelete(query as CFDictionary) }.value
         entries.removeAll { $0.name == name }
+        typed.removeValue(forKey: name)
         persist()
     }
 
@@ -135,7 +159,7 @@ final class AgentVault {
         return value
     }
 
-    private static func write(_ name: String, value: String) throws {
+    nonisolated private static func write(_ name: String, value: String) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: name]
         let data = Data(value.utf8)

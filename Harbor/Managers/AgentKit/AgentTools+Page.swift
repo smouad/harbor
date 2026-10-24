@@ -123,7 +123,14 @@ extension AgentToolbox {
         let webView: WKWebView
         if let string = call.args.string("url") {
             let url = try webURL(string, task: call.task)
-            if let existing = call.webView {
+            if let existing = call.webView, let task = call.task {
+                // In a task, opening a page goes through its approvals like a navigate step.
+                webView = existing
+                _ = try await AgentActions(webView: existing, task: task, deadline: call.deadline.addingTimeInterval(-1))
+                    .perform(["action": "navigate", "url": url.absoluteString])
+                let page = try await AgentRuntime.object("markdown", options, in: webView)
+                return .untrusted(page, origin: webView.url?.host)
+            } else if let existing = call.webView {
                 webView = existing
             } else {
                 // No Agent space tab yet: make one.
@@ -195,8 +202,10 @@ extension AgentToolbox {
         if let task = call.task, task.confirm != .never {
             var facts = AgentActionFacts(action: "upload")
             facts.host = webView.url?.host ?? ""
-            if let pending = await AgentHub.shared.approvals.gate(task: task, facts: facts) {
-                return .json(["ok": false, "needs_approval": pending.id, "reason": pending.reason])
+            switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
+            case .allowed: break
+            case .needsApproval(let request): return .json(["ok": false, "needs_approval": request.id, "reason": request.reason])
+            case .refused(let why): throw AgentError.invalid(why)
             }
         }
         AgentHub.shared.dialogs.stage(files, for: item)

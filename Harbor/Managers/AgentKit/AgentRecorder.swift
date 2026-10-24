@@ -129,7 +129,12 @@ final class AgentRecorder {
         var vars: [String: Any] = [:]
         var built: [[String: Any]] = []
         for var step in steps {
-            if step["action"] as? String == "fill" {
+            if step["action"] as? String == "fill", step["sensitive"] as? Bool == true {
+                // A password is never kept; the step names a vault secret instead, written in the
+                // step itself (a placeholder arriving through a variable is refused).
+                step["text"] = "{{secret:\(Self.varName(from: step["label"] as? String ?? "password"))}}"
+                step.removeValue(forKey: "sensitive")
+            } else if step["action"] as? String == "fill" {
                 let base = Self.varName(from: step["label"] as? String ?? "field")
                 var key = base
                 var n = 2
@@ -140,8 +145,9 @@ final class AgentRecorder {
             built.append(step)
         }
         var about = description
-        if built.contains(where: { $0["sensitive"] as? Bool == true }) {
-            about += (about.isEmpty ? "" : " ") + "Password fields were left empty: pass them as {{secret:name}}."
+        let secrets = built.flatMap { AgentPlaceholders.names(in: $0["text"] as? String ?? "") }
+        if !secrets.isEmpty {
+            about += (about.isEmpty ? "" : " ") + "Needs vault secrets: \(secrets.joined(separator: ", ")) (Settings > Developer > Agent Vault)."
         }
         return AgentRecipe(name: name, description: about, sites: hosts.filter { !$0.isEmpty }, vars: vars, expose: expose, steps: built)
     }

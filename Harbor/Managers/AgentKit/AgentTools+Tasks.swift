@@ -105,6 +105,8 @@ extension AgentToolbox {
         required: ["task", "outcome"]
     ) { call in
         let task = try task(call)
+        // The person is in that tab now: ending the task would hand it back to any caller.
+        if task.isPausedForPerson { throw AgentError.paused(task.title) }
         let summary = call.args.string("summary").map { String($0.prefix(300)) }
         AgentHub.shared.tasks.set(task, call.args.string("outcome") == "failed" ? .failed(summary) : .done(summary))
         AgentHub.shared.approvals.dropAll(for: task.id)

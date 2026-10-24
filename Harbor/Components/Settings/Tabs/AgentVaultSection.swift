@@ -29,7 +29,7 @@ struct AgentVaultSection: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Remove", role: .destructive) { vault.remove(entry.name) }
+                    Button("Remove", role: .destructive) { Task { await vault.remove(entry.name) } }
                 }
             }
             TextField("Name", text: $name, prompt: Text("work_email_password"))
@@ -55,14 +55,16 @@ struct AgentVaultSection: View {
     }
 
     private func add() {
-        do {
-            try vault.save(name: name, domains: sites.split(separator: ",").map(String.init), value: value)
-            name = ""
-            sites = ""
-            value = ""
-            error = nil
-        } catch {
-            self.error = error.agentMessage
+        Task {
+            do {
+                try await vault.save(name: name, domains: sites.split(separator: ",").map(String.init), value: value)
+                name = ""
+                sites = ""
+                value = ""
+                error = nil
+            } catch {
+                self.error = error.agentMessage
+            }
         }
     }
 }

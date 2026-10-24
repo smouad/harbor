@@ -285,10 +285,20 @@
 
     // Types through the editor, which reports the input as trusted (isTrusted: true), the way
     // a person's typing arrives. Falls back to the value setter when the editor refuses.
+    // A secret goes into a single-line field only: a text area or an editable region shows its
+    // text to every reader of the page (names, innerText, Markdown).
+    function secretField(el) {
+        if (el.tagName !== "INPUT") {
+            throw new Error("A secret can only be typed into a single-line input field");
+        }
+        return el;
+    }
+
     function insertText({ target, text = "", clear = false, secret = false, host }) {
         const el = focusEditable(need(target));
         const doc = el.ownerDocument;
         if (secret) {
+            secretField(el);
             // The page may have navigated since Harbor checked the site the secret is for.
             if (doc.location.hostname !== host) throw new Error(`The page is no longer on ${host}`);
             secretFields.add(el);
@@ -337,15 +347,6 @@
     }
 
     let hovered = null;
-    const documentToken = Math.random().toString(36).slice(2);
-
-    // Counts trusted presses on a target's document, so Harbor can tell a native click landed.
-    const pressCounts = new WeakMap();
-    function armPress(doc) {
-        if (pressCounts.has(doc)) return;
-        pressCounts.set(doc, 0);
-        doc.addEventListener("mousedown", e => { if (e.isTrusted) pressCounts.set(doc, pressCounts.get(doc) + 1); }, true);
-    }
 
     function domClick(el) {
         const r = el.getBoundingClientRect();
@@ -361,13 +362,29 @@
         observe,
         point,
         describe: ({ target }) => describe(need(target)),
-        // Trusted presses seen so far on the target's document (starts watching on first call),
-        // with this document's token: a new token means the page changed under the click.
-        presses: ({ target }) => {
-            const el = target ? resolve(target) : null;
-            const doc = el ? el.ownerDocument : document;
-            armPress(doc);
-            return { count: pressCounts.get(doc), document: documentToken };
+        // Resolves after the page has drawn a frame: by then it knows where its view is.
+        frame: () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))),
+        // What is under a point, looking into same-origin frames. A frame from another site is
+        // reported as such: its content cannot be seen, so a click there cannot be judged.
+        describeAt: ({ x, y }) => {
+            let doc = document, px = x, py = y, el = null;
+            for (let depth = 0; depth < 8; depth++) {
+                el = doc.elementFromPoint(px, py);
+                if (!el || (el.tagName !== "IFRAME" && el.tagName !== "FRAME")) break;
+                let inner = null;
+                try { inner = el.contentDocument; } catch { inner = null; }
+                const r = el.getBoundingClientRect();
+                if (!inner) {
+                    let host = "";
+                    try { host = new URL(el.src, location.href).hostname; } catch { host = ""; }
+                    return { crossOrigin: true, role: "frame", name: host, ref: refFor(el) };
+                }
+                doc = inner;
+                px -= r.left + el.clientLeft;
+                py -= r.top + el.clientTop;
+            }
+            if (!el) return {};
+            return describe(el.closest(INTERACTIVE) || el);
         },
         // For Swift code that works on the element itself inside this world (upload).
         resolveRef: ({ ref }) => need(ref),
@@ -399,6 +416,7 @@
         setValue: ({ target, value = "", secret = false, host }) => {
             const el = focusEditable(need(target));
             if (secret) {
+                secretField(el);
                 if (el.ownerDocument.location.hostname !== host) throw new Error(`The page is no longer on ${host}`);
                 secretFields.add(el);
                 secretTyped = true;
@@ -665,7 +683,7 @@
             if (!pending) return;
             clearTimeout(pending.timer);
             pendingInput.delete(el);
-            const sensitive = el.type === "password" || /card|cc-|cvv|cvc|iban|ssn/i.test(`${el.name} ${el.id} ${el.autocomplete}`);
+            const sensitive = el.type === "password" || secretFields.has(el) || /card|cc-|cvv|cvc|iban|ssn|otp|one-time/i.test(`${el.name} ${el.id} ${el.autocomplete}`);
             post({ action: "fill", ...selectorsFor(el), text: sensitive ? "" : el.value, sensitive });
         };
         const onClick = e => {

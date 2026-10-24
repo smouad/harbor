@@ -64,7 +64,7 @@ final class AgentReplay {
 
     func record(task: AgentTask, tool: String, args: [String: Any], result: AgentResult, started: Date, webView: WKWebView?) {
         var list = steps[task.id] ?? []
-        let text = result.content.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        let text = AgentHub.shared.vault.scrub(result.content.compactMap { $0["text"] as? String }.joined(separator: "\n"))
         // A step held for the person's approval did not happen yet.
         let held = text.contains("\"needs_approval\"")
         let step = Step(

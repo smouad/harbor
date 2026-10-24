@@ -115,6 +115,11 @@ final class AgentPages: AgentPageHost {
         lineage(of: itemID).lazy.compactMap { AgentHub.shared.tasks.task(forItem: $0) }.first
     }
 
+    /// The task that owns the tab, ended or not: a task's tab stays the task's.
+    func owner(of itemID: UUID) -> AgentTask? {
+        lineage(of: itemID).lazy.compactMap { id in AgentHub.shared.tasks.all.last { $0.itemID == id } }.first
+    }
+
     /// The tab and the tabs it was opened from, nearest first.
     private func lineage(of itemID: UUID) -> [UUID] {
         guard let tabs = browser?.tabs else { return [itemID] }

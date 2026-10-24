@@ -60,9 +60,11 @@ final class AgentHub {
 final class AgentSignal {
     private final class Waiter {
         var continuation: CheckedContinuation<Bool, Never>?
+        var timeout: Task<Void, Never>?
         func resume(_ value: Bool) {
             continuation?.resume(returning: value)
             continuation = nil
+            timeout?.cancel()
         }
     }
 
@@ -83,7 +85,7 @@ final class AgentSignal {
             await withCheckedContinuation { continuation in
                 waiter.continuation = continuation
                 waiters.append(waiter)
-                Task { @MainActor [weak self] in
+                waiter.timeout = Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .seconds(timeout))
                     self?.drop(waiter)
                 }
@@ -127,6 +129,7 @@ enum AgentID {
 enum AgentDeadline {
     private final class Race {
         var done = false
+        var work: Task<Void, Never>?
     }
 
     struct Expired: LocalizedError {
@@ -143,19 +146,22 @@ enum AgentDeadline {
     static func throwing<T>(_ seconds: Double, _ operation: @escaping @MainActor () async throws -> T) async throws -> T {
         let race = Race()
         let result: Result<T, Error> = await withCheckedContinuation { continuation in
-            let work = Task { @MainActor in
+            // The deadline is made first so the work can cancel it: an answer in a millisecond
+            // must not leave a sleeper on the main actor for the full timeout.
+            let deadline = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(max(0, seconds)))
+                guard !race.done else { return }
+                race.done = true
+                race.work?.cancel()
+                continuation.resume(returning: .failure(Expired(seconds: seconds)))
+            }
+            race.work = Task { @MainActor in
                 let outcome: Result<T, Error>
                 do { outcome = .success(try await operation()) } catch { outcome = .failure(error) }
                 guard !race.done else { return }
                 race.done = true
+                deadline.cancel()
                 continuation.resume(returning: outcome)
-            }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(max(0, seconds)))
-                guard !race.done else { return }
-                race.done = true
-                work.cancel()
-                continuation.resume(returning: .failure(Expired(seconds: seconds)))
             }
         }
         return try result.get()

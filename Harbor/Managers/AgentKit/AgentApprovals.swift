@@ -32,42 +32,70 @@ final class AgentApprovals {
         case allowed, denied
     }
 
+    /// What the gate says about an action.
+    enum Gate {
+        case allowed
+        case needsApproval(Request)
+        /// May not happen at all (the task ended or the person has it).
+        case refused(String)
+    }
+
+    private struct Grant {
+        let until: Date
+        let singleUse: Bool
+    }
+
     private(set) var pending: [Request] = []
     @ObservationIgnored private var decided: [String: Decision] = [:]
     @ObservationIgnored private var decidedOrder: [String] = []
-    @ObservationIgnored private var granted: [String: Date] = [:]
+    @ObservationIgnored private var granted: [String: Grant] = [:]
     @ObservationIgnored let changed = AgentSignal()
-    /// Actions the critic already found on-goal this session, so it is asked once per action.
+    /// Actions the critic found on-goal this session, so it is asked once per action. Only a
+    /// real verdict counts: a timeout or a missing model is no answer.
     @ObservationIgnored private var criticCleared: Set<String> = []
 
     private static let grantLifetime: TimeInterval = 120
 
-    /// Nil when the action may go ahead; otherwise the request the person has to answer.
-    func gate(task: AgentTask, facts: AgentActionFacts) async -> Request? {
-        let fingerprint = [task.id, facts.action, facts.role, facts.name, facts.host, facts.key].joined(separator: "|")
-        if let until = granted[fingerprint], until > Date() { return nil }
-        if let existing = pending.first(where: { $0.fingerprint == fingerprint }) { return existing }
+    func gate(task: AgentTask, facts: AgentActionFacts) async -> Gate {
+        if let refusal = Self.refusal(task) { return .refused(refusal) }
+        // The exact control and text: approving one "Place order" approves no other.
+        let fingerprint = [task.id, facts.action, facts.element, facts.role, facts.name, facts.host, facts.key,
+                           String(facts.text.hashValue)].joined(separator: "|")
+        if let grant = granted[fingerprint], grant.until > Date() {
+            if grant.singleUse { granted.removeValue(forKey: fingerprint) }
+            return .allowed
+        }
+        if let existing = pending.first(where: { $0.fingerprint == fingerprint }) { return .needsApproval(existing) }
 
         var reason: String?
         switch task.confirm {
-        case .never: return nil
+        case .never: return .allowed
         case .always: reason = "Changes the page"
         case .sensitive:
             reason = AgentSensitivity.reason(for: facts)
             if reason == nil, let goal = task.goal, worthACriticCheck(facts), !criticCleared.contains(fingerprint) {
-                reason = await AgentOnDevice.offGoalReason(goal: goal, facts: facts)
-                if reason == nil { criticCleared.insert(fingerprint) }
+                switch await AgentOnDevice.critic(goal: goal, facts: facts) {
+                case .fits: criticCleared.insert(fingerprint)
+                case .off(let why): reason = why
+                case .unknown: break
+                }
             }
         }
-        guard let reason else { return nil }
-        // The person may have stopped the task while the critic thought: nothing left to approve.
-        guard !task.isFinished else { return nil }
+        // The person may have stopped the task, or taken it, while the critic thought.
+        if let refusal = Self.refusal(task) { return .refused(refusal) }
+        guard let reason else { return .allowed }
         let request = Request(id: AgentID.make("a"), taskID: task.id, taskTitle: task.title, reason: reason,
                               action: Self.describe(facts), fingerprint: fingerprint)
         pending.append(request)
         AgentNotifier.approvalNeeded(request)
         changed.fire()
-        return request
+        return .needsApproval(request)
+    }
+
+    private static func refusal(_ task: AgentTask) -> String? {
+        if task.isFinished { return "Task \(task.id) has ended" }
+        if task.isPausedForPerson { return AgentError.paused(task.title).errorDescription }
+        return nil
     }
 
     func decide(_ id: String, allow: Bool) {
@@ -76,7 +104,10 @@ final class AgentApprovals {
         decided[id] = allow ? .allowed : .denied
         decidedOrder.append(id)
         if decidedOrder.count > 200 { decided.removeValue(forKey: decidedOrder.removeFirst()) }
-        if allow { granted[request.fingerprint] = Date().addingTimeInterval(Self.grantLifetime) }
+        if allow {
+            let grant = Grant(until: Date().addingTimeInterval(Self.grantLifetime), singleUse: AgentSensitivity.isSingleUse(request.reason))
+            granted[request.fingerprint] = grant
+        }
         AgentNotifier.withdraw(request.id)
         changed.fire()
     }
@@ -100,7 +131,7 @@ final class AgentApprovals {
     /// can do something the person did not ask for. Typing and scrolling alone cannot.
     private func worthACriticCheck(_ facts: AgentActionFacts) -> Bool {
         switch facts.action {
-        case "click", "submit", "press": return !facts.name.isEmpty || facts.action == "submit"
+        case "click", "submit", "press": return !facts.name.isEmpty || facts.action == "submit" || facts.element.isEmpty
         case "navigate": return true
         default: return false
         }

@@ -175,7 +175,10 @@ final class DevMCPServer {
             guard let called else {
                 return (200, rpcError(id: id, code: -32001, message: "Tool \(name) did not answer within \(Int(Self.toolTimeout))s"))
             }
-            result = called
+            // No vault value leaves Harbor, whatever path a page found to echo one.
+            var scrubbed = called
+            if let content = called["content"] as? [[String: Any]] { scrubbed["content"] = AgentHub.shared.vault.scrub(content: content) }
+            result = scrubbed
         default:
             return (200, rpcError(id: id, code: -32601, message: "Method not found: \(method)"))
         }
@@ -644,7 +647,8 @@ final class DevMCPServer {
             case "closeTabs":
                 if args["regular"] as? Bool == true {
                     guard let spaceID = space else { return text("Window has no space", error: true) }
-                    let roots = bm.tabs.children(of: .tabs(spaceID: spaceID))
+                    // A task's tab is the task's: only the person (or the task) closes it.
+                    let roots = bm.tabs.children(of: .tabs(spaceID: spaceID)).filter { AgentToolbox.taskTabRefusal(item: $0.id) == nil }
                     for item in roots { bm.tabs.remove(item.id) }
                     return text("Removed \(roots.count) items from the regular tabs section")
                 }
@@ -653,12 +657,16 @@ final class DevMCPServer {
                       indices.allSatisfy(order.indices.contains) else {
                     return text("indices must be positions from getTabList (0-\(order.count - 1))", error: true)
                 }
+                if let refusal = indices.lazy.compactMap({ AgentToolbox.taskTabRefusal(item: order[$0]) }).first {
+                    return text(refusal, error: true)
+                }
                 bm.tabs.close(indices.map { order[$0] })
                 return text("Closed \(indices.count) tabs")
 
             case "pinTab":
                 guard let index = (args["index"] as? NSNumber).flatMap(Self.wholeNumber), order.indices.contains(index),
                       let spaceID = space else { return text("index must be a position from getTabList", error: true) }
+                if let refusal = AgentToolbox.taskTabRefusal(item: order[index]) { return text(refusal, error: true) }
                 bm.tabs.pin(order[index], to: .pinned(spaceID: spaceID))
                 return text("Pinned: \(bm.tabs.item(order[index])?.displayTitle ?? "")")
 
