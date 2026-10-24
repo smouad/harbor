@@ -298,9 +298,12 @@ struct WebsiteView: View {
                     )
             }
 
-            // A glance or a screenshot of the window shows that an agent drives this page.
+            // A glance or a screenshot of the window shows that an agent drives this page: the
+            // Agent space always, one of the person's own tabs while an agent works in it.
             if windowState.spaceID != nil, windowState.spaceID == browserManager.tabs.agentSpaceID {
                 AgentFrame(shape: webViewClipShape, busy: browserManager.tabs.agentCallsInFlight > 0)
+            } else if let selected = windowState.selectedItemID, AgentHub.shared.borrowedNow.contains(selected) {
+                AgentFrame(shape: webViewClipShape, busy: true)
             }
 
             // Approvals, handoffs and recordings in every window; the task list in the Agent space.

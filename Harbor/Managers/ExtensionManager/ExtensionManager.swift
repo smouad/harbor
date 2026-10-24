@@ -77,6 +77,9 @@ final class ExtensionManager: NSObject, ObservableObject,
         if isExtensionSupportAvailable {
             setupExtensionController()
             loadInstalledExtensions()
+            #if DEBUG
+            installTestExtensionIfAsked()
+            #endif
             registerInternalNativePortHandlers()
             NotificationCenter.default.addObserver(
                 forName: NSApplication.didBecomeActiveNotification,

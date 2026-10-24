@@ -177,6 +177,9 @@ public final class PageSession: NSObject, Identifiable {
     public var topBarBackgroundColor: PlatformColor? = nil
     /// Option key state for Peek on link click.
     @ObservationIgnored public var isOptionKeyDown: Bool = false
+    /// The user agent this page presents, set by an agent for one page; nil follows the
+    /// settings (ChromeIdentity). Applied from the next main-frame load.
+    @ObservationIgnored public var userAgentOverride: String?
     @ObservationIgnored public var onLinkHover: ((String?) -> Void)? = nil
     @ObservationIgnored public var onCommandHover: ((String?) -> Void)? = nil
     @ObservationIgnored public var pendingContextMenuPayload: WebContextMenuPayload?
@@ -344,9 +347,9 @@ public final class PageSession: NSObject, Identifiable {
             return
         }
 
-        // Private and Agent pages never get the extension controller: extensions could open
-        // windows and activate the app from an Agent page.
-        if isPrivate || isAgentPage {
+        // Private pages never get the extension controller. Agent pages get it when the person
+        // allowed it (Settings > Developer), so a password manager can fill an agent's login.
+        if isPrivate || (isAgentPage && controller?.settings.agentExtensionsEnabled != true) {
             configuration.webExtensionController = nil
         } else if configuration.webExtensionController == nil,
                   let extensionController = controller?.tabEvents?.nativeController {
@@ -416,7 +419,7 @@ public final class PageSession: NSObject, Identifiable {
         controller.add(self, contentWorld: Self.pipStateWorld, name: "pipStateChange")
         controller.removeScriptMessageHandler(forName: Self.translateHandlerName, contentWorld: Self.translateWorld)
         controller.add(self, contentWorld: Self.translateWorld, name: Self.translateHandlerName)
-        webView.customUserAgent = PlatformUserAgent.custom
+        webView.customUserAgent = wantedUserAgent(for: url)
         // Let the web content control its own background so extension styles (like Dark
         // Reader) can paint dark backgrounds. The themed background shows only while loading.
         webView.setDrawsPageBackground(true)
@@ -547,6 +550,7 @@ public final class PageSession: NSObject, Identifiable {
         } else {
             var request = URLRequest(url: url)
             request.timeoutInterval = 30.0
+            (webView as? SessionWebView)?.owningSession?.prepareUserAgent(for: url)
             webView.load(request)
         }
     }

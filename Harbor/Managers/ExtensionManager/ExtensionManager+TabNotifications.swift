@@ -16,10 +16,10 @@ extension ExtensionManager {
 
     // MARK: - Adapters
 
-    /// Adapter for a tab item extensions may see; nil for folders, unknown ids, private items
-    /// and Agent space items.
+    /// Adapter for a tab item extensions may see; nil for folders, unknown ids, private items,
+    /// and Agent space items unless extensions are allowed there.
     func adapter(for itemID: UUID) -> ExtensionTabAdapter? {
-        if browserManagerRef?.tabs.isInAgentSpace(itemID) == true { return nil }
+        if let tabs = browserManagerRef?.tabs, tabs.isInAgentSpace(itemID), !tabs.settings.agentExtensionsEnabled { return nil }
         if let existing = tabAdapters[itemID] { return existing }
         guard let bm = browserManagerRef, let item = bm.tabs.item(itemID), !item.isFolder,
               bm.tabs.session(for: itemID)?.isPrivate != true,
@@ -34,7 +34,7 @@ extension ExtensionManager {
 
     /// Every enabled extension's items for a page's context menu (`contextMenus` / `menus`).
     /// WebKit hands back one item per extension, a submenu under its name when it has several.
-    /// Private and Agent pages get none, as they get no adapter.
+    /// Private pages get none, and Agent pages unless extensions are allowed there, as they get no adapter.
     func contextMenuItems(for session: PageSession) -> [NSMenuItem] {
         guard !session.isPrivate, let adapter = adapter(for: session.itemID) else { return [] }
         return installedExtensions

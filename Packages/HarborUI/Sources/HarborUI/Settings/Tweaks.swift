@@ -10,43 +10,19 @@ import SwiftUI
 import HarborDesign
 import HarborSettings
 
-/// Per-site tweaks: media downloads, Facebook, Reddit, YouTube and SponsorBlock.
+/// Per-site tweaks: media downloads, presenting as Chrome, Facebook, Reddit, YouTube and SponsorBlock.
 public struct SettingsTweaksTab: View {
     @Environment(HarborSettingsService.self) var harborSettings
-    @State private var newSite = ""
-    @State private var showingAddSite = false
-
     public init() {}
 
     public var body: some View {
         @Bindable var settings = harborSettings
         Form {
-            // Same rows as Site Search in General.
-            Section {
-                ForEach(settings.mediaDownloadSites, id: \.self) { site in
-                    LabeledContent {
-                        Button {
-                            settings.mediaDownloadSites.removeAll { $0 == site }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.plain)
-                    } label: {
-                        Text(site)
-                    }
-                }
+            SiteListSection(sites: $settings.mediaDownloadSites, title: "Download Button",
+                            footer: "Shows a download button on photos and videos, and saves the largest size the page offers to Downloads. Subdomains are included.")
 
-                Button {
-                    showingAddSite = true
-                } label: {
-                    Label("Add Site", systemImage: "plus")
-                }
-            } header: {
-                Text("Download Button")
-            } footer: {
-                Text("Shows a download button on photos and videos, and saves the largest size the page offers to Downloads. Subdomains are included.")
-            }
+            SiteListSection(sites: $settings.chromeIdentitySites, title: "Present as Chrome",
+                            footer: "These sites see Harbor as Google Chrome, for sites that turn Safari away or give it a lesser page. Subdomains are included. Takes effect on the next page load.")
 
             Section {
                 Toggle("Hide Reels", isOn: $settings.facebookHideReels)
@@ -68,7 +44,44 @@ public struct SettingsTweaksTab: View {
             YouTubeSettingsSections()
         }
         .formStyle(.grouped)
-        .alert("Add Site", isPresented: $showingAddSite) {
+    }
+}
+
+/// A list of sites with remove buttons and an Add Site row; same rows as Site Search in General.
+private struct SiteListSection: View {
+    @Binding var sites: [String]
+    let title: String
+    let footer: String
+    @State private var newSite = ""
+    @State private var adding = false
+
+    var body: some View {
+        Section {
+            ForEach(sites, id: \.self) { site in
+                LabeledContent {
+                    Button {
+                        sites.removeAll { $0 == site }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                } label: {
+                    Text(site)
+                }
+            }
+
+            Button {
+                adding = true
+            } label: {
+                Label("Add Site", systemImage: "plus")
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            Text(footer)
+        }
+        .alert("Add Site", isPresented: $adding) {
             TextField("Add a site (e.g. instagram.com)", text: $newSite)
             Button("Add", action: add)
                 .disabled(SiteRoutingRule.normalizeDomain(newSite).isEmpty)
@@ -78,8 +91,8 @@ public struct SettingsTweaksTab: View {
 
     private func add() {
         let domain = SiteRoutingRule.normalizeDomain(newSite)
-        guard !domain.isEmpty, !harborSettings.mediaDownloadSites.contains(domain) else { return }
-        harborSettings.mediaDownloadSites.append(domain)
+        guard !domain.isEmpty, !sites.contains(domain) else { return }
+        sites.append(domain)
         newSite = ""
     }
 }

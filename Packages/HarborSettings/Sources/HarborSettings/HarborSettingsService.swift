@@ -34,6 +34,10 @@ public final class HarborSettingsService {
     private let showAIAssistantKey = "settings.showAIAssistant"
     private let browserControlServerKey = "settings.browserControlServer"
     private let developerModeKey = "settings.developerMode"
+    private let agentTabAccessKey = "settings.agentTabAccess"
+    private let agentExtensionsKey = "settings.agentExtensions"
+    private let agentPresentsAsChromeKey = "settings.agentPresentsAsChrome"
+    private let chromeIdentitySitesKey = "settings.chromeIdentitySites"
     private let aiProviderKey = "settings.aiProvider"
     private let openRouterApiKeyKey = "settings.openRouterApiKey"
     private let openRouterModelKey = "settings.openRouterModel"
@@ -270,6 +274,27 @@ public final class HarborSettingsService {
         }
     }
 
+    /// Whether Browser Control's agents may work in the person's own tabs, not only the Agent
+    /// space: never, after the person allows each tab, or always.
+    public var agentTabAccess: AgentTabAccess {
+        didSet { userDefaults.set(agentTabAccess.rawValue, forKey: agentTabAccessKey) }
+    }
+
+    /// Extensions run in Agent space tabs too (a password manager fills a login there).
+    public var agentExtensionsEnabled: Bool {
+        didSet { userDefaults.set(agentExtensionsEnabled, forKey: agentExtensionsKey) }
+    }
+
+    /// Agent pages tell sites they are Chrome, so a site that turns Safari away lets them in.
+    public var agentPresentsAsChrome: Bool {
+        didSet { userDefaults.set(agentPresentsAsChrome, forKey: agentPresentsAsChromeKey) }
+    }
+
+    /// Sites the person's own tabs present as Chrome to (domain suffixes, like site routing).
+    public var chromeIdentitySites: [String] {
+        didSet { userDefaults.set(chromeIdentitySites, forKey: chromeIdentitySitesKey) }
+    }
+
     public var aiProvider: AIProvider {
         didSet {
             userDefaults.set(aiProvider.rawValue, forKey: aiProviderKey)
@@ -488,6 +513,9 @@ public final class HarborSettingsService {
             searchPageTextInHistoryKey: true,
             hideWebContentBorderKey: false,
             didFinishOnboardingKey: false,
+            agentTabAccessKey: AgentTabAccess.off.rawValue,
+            agentExtensionsKey: true,
+            agentPresentsAsChromeKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
             appearanceModeKey: AppearanceMode.system.rawValue,
             tabOrganizerEnabledKey: false,
@@ -578,6 +606,10 @@ public final class HarborSettingsService {
         self.browserControlServerEnabled = browserControlOn
         // Browser Control predates Developer Mode, so anyone who had it on keeps it reachable.
         self.developerModeEnabled = userDefaults.object(forKey: developerModeKey) as? Bool ?? browserControlOn
+        self.agentTabAccess = AgentTabAccess(rawValue: userDefaults.string(forKey: agentTabAccessKey) ?? "") ?? .off
+        self.agentExtensionsEnabled = userDefaults.bool(forKey: agentExtensionsKey)
+        self.agentPresentsAsChrome = userDefaults.bool(forKey: agentPresentsAsChromeKey)
+        self.chromeIdentitySites = userDefaults.stringArray(forKey: chromeIdentitySitesKey) ?? []
         // "Agent uses its own window" is gone: agents always browse in the Agent space now.
         userDefaults.removeObject(forKey: "settings.agentWindow")
         self.aiProvider = AIProvider(rawValue: userDefaults.string(forKey: aiProviderKey) ?? AIProvider.gemini.rawValue) ?? .gemini
@@ -875,4 +907,14 @@ public enum StartupLoadMode: String, CaseIterable, Identifiable {
         case .favoritesAndSpace: return "Your last open tab, favorites, and current space tabs are loaded on start."
         }
     }
+}
+
+/// How far Browser Control's agents reach beyond the Agent space.
+public enum AgentTabAccess: String, CaseIterable, Sendable {
+    /// The Agent space only.
+    case off
+    /// A person's tab once they allow it, for as long as it stays open.
+    case ask
+    /// Any of the person's tabs.
+    case always
 }

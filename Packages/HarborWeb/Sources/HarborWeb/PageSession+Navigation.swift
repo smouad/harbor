@@ -325,6 +325,25 @@ extension PageSession: WKNavigationDelegate {
             return
         }
 
+        // Present as Chrome or Safari to this site (ChromeIdentity). The request already carries
+        // the old user agent, so a plain load starts again with the new one; a POST or a history
+        // step goes ahead and the page's scripts see the new one.
+        if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url,
+           url.scheme == "http" || url.scheme == "https" {
+            let wanted = wantedUserAgent(for: url)
+            // WebKit reads back "" for no custom agent; comparing raw would reload forever.
+            if (webView.customUserAgent ?? "") != (wanted ?? "") {
+                webView.customUserAgent = wanted
+                if (navigationAction.request.httpMethod ?? "GET") == "GET", navigationAction.navigationType != .backForward {
+                    var request = navigationAction.request
+                    request.setValue(nil, forHTTPHeaderField: "User-Agent")
+                    decisionHandler(.cancel)
+                    webView.load(request)
+                    return
+                }
+            }
+        }
+
         if let url = navigationAction.request.url,
             navigationAction.targetFrame?.isMainFrame == true
         {

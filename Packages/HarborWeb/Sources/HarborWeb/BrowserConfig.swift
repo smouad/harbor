@@ -79,6 +79,7 @@ public class BrowserConfiguration {
             forMainFrameOnly: false
         )
         config.userContentController.addUserScript(passkeySuppress)
+        config.userContentController.addUserScript(ChromeIdentity.shim)
 
         return config
     }()

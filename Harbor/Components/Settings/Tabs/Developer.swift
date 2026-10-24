@@ -54,6 +54,22 @@ struct SettingsDeveloperTab: View {
             }
 
             if settings.developerModeEnabled && settings.browserControlServerEnabled {
+                Section {
+                    Picker("Your tabs", selection: $settings.agentTabAccess) {
+                        Text("Agent space only").tag(AgentTabAccess.off)
+                        Text("Ask for each tab").tag(AgentTabAccess.ask)
+                        Text("Any tab").tag(AgentTabAccess.always)
+                    }
+                    Toggle("Extensions in agent tabs", isOn: $settings.agentExtensionsEnabled)
+                    Toggle("Agent tabs present as Chrome", isOn: $settings.agentPresentsAsChrome)
+                } header: {
+                    Text("Agents")
+                } footer: {
+                    Text("Agents work in the Agent space. With Ask for each tab, an agent can also use one of your tabs once you allow it on its card; with Any tab, without asking. A tab an agent is using shows the Agent frame. Extensions apply to tabs opened after the change. Chrome makes sites that turn Safari away let agents in.")
+                        .font(HarborDesign.Font.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 AgentVaultSection()
             }
         }

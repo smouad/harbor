@@ -4,6 +4,9 @@
 #
 #   scripts/tests/agent-copy.sh [build|launch|quit|token|port|files]   (default: build + launch)
 #
+# HARBOR_AGENT_TAB_ACCESS (off, ask or always; default always) sets how far agents reach into the
+# copy's own tabs, so agent_e2e.py can check each.
+#
 # The copy is com.mouad.harbor.agent on port 47911, so it never touches com.mouad.harbor.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -41,8 +44,12 @@ launch() {
     defaults write $bundle_id settings.didFinishOnboarding -bool true
     defaults write $bundle_id settings.developerMode -bool true
     defaults write $bundle_id settings.browserControlServer -bool true
+    defaults write $bundle_id settings.agentTabAccess -string "${HARBOR_AGENT_TAB_ACCESS:-always}"
     mkdir -p "$files"
-    open -g -n -a "$copy" --args -HarborDevMCPPort "$port" -HarborDevMCPFiles "$files"
+    # Debug builds install the test extension without its consent sheet (agent_e2e.py checks
+    # that extensions run in agent tabs); a Release copy ignores the argument.
+    open -g -n -a "$copy" --args -HarborDevMCPPort "$port" -HarborDevMCPFiles "$files" \
+        -HarborTestExtension "$PWD/scripts/tests/agent-fixtures/extension"
     for _ in $(seq 1 100); do
         [ -s "$token_file" ] && curl -s -o /dev/null -m 1 "http://127.0.0.1:$port/mcp" && break
         sleep 0.2

@@ -100,6 +100,20 @@ final class AgentApprovals {
         return .needsApproval(request)
     }
 
+    /// Whether an agent may work in one of the person's tabs under the "ask" setting: once they
+    /// allow a tab it stays allowed while Harbor runs.
+    func tabAccess(item: UUID, title: String, host: String) -> Gate {
+        let fingerprint = "tab|\(item.uuidString)"
+        if let grant = granted[fingerprint], grant.until > Date() { return .allowed }
+        if let existing = pending.first(where: { $0.fingerprint == fingerprint }) { return .needsApproval(existing) }
+        let request = Request(id: AgentID.make("a"), taskID: "", taskTitle: "Your tab", reason: "Works in one of your own tabs",
+                              action: "Use your tab \"\(title.prefix(60))\"" + (host.isEmpty ? "" : " on \(host)"), fingerprint: fingerprint)
+        pending.append(request)
+        AgentNotifier.approvalNeeded(request)
+        changed.fire()
+        return .needsApproval(request)
+    }
+
     private static func refusal(_ task: AgentTask) -> String? {
         if task.isFinished { return "Task \(task.id) has ended" }
         if task.isPausedForPerson { return AgentError.paused(task.title).errorDescription }
@@ -113,7 +127,9 @@ final class AgentApprovals {
         decidedOrder.append(id)
         if decidedOrder.count > 200 { decided.removeValue(forKey: decidedOrder.removeFirst()) }
         if allow {
-            let grant = Grant(until: Date().addingTimeInterval(Self.grantLifetime), singleUse: AgentSensitivity.isSingleUse(request.reason))
+            let tab = request.fingerprint.hasPrefix("tab|")
+            let grant = Grant(until: tab ? .distantFuture : Date().addingTimeInterval(Self.grantLifetime),
+                              singleUse: !tab && AgentSensitivity.isSingleUse(request.reason))
             granted[request.fingerprint] = grant
         }
         AgentNotifier.withdraw(request.id)

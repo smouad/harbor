@@ -42,7 +42,25 @@ final class AgentHub {
         return base
     }()
 
+    /// The person's own tabs an agent used in the last few seconds; their windows show the
+    /// Agent frame over them meanwhile.
+    private(set) var borrowedNow: Set<UUID> = []
+    @ObservationIgnored private var borrowedUntil: [UUID: Date] = [:]
+
     private init() {}
+
+    func noteBorrowed(_ item: UUID) {
+        borrowedUntil[item] = Date().addingTimeInterval(Self.borrowedFrameSeconds)
+        if !borrowedNow.contains(item) { borrowedNow.insert(item) }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.borrowedFrameSeconds))
+            guard let self, let until = self.borrowedUntil[item], until <= Date() else { return }
+            self.borrowedUntil.removeValue(forKey: item)
+            self.borrowedNow.remove(item)
+        }
+    }
+
+    private static let borrowedFrameSeconds: TimeInterval = 4
 
     func configure(browser: BrowserManager) {
         self.browser = browser

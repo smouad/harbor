@@ -11,6 +11,7 @@
 
 import Foundation
 import WebKit
+import HarborWeb
 
 @MainActor
 final class AgentActions {
@@ -379,6 +380,7 @@ enum AgentPageWait {
         let deadline = Date().addingTimeInterval(timeout)
         let previous = webView.url?.absoluteString
         let reloading = previous == url.absoluteString
+        (webView as? SessionWebView)?.owningSession?.prepareUserAgent(for: url)
         webView.load(URLRequest(url: url))
         _ = await until(webView, \.isLoading, timeout: min(3, timeout)) { webView.isLoading }
         guard await load(webView, timeout: max(0, deadline.timeIntervalSinceNow)) else { return false }

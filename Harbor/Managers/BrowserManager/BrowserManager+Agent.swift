@@ -56,6 +56,26 @@ extension BrowserManager {
         return view
     }
 
+    /// One of the person's own tabs, loaded and in a window, for an agent the person let work there
+    /// (Settings > Developer). A tab a window shows is used where it is; one no window shows goes
+    /// into the hidden host like an agent page, until the person opens it or it goes idle.
+    func borrowedWebView(item id: UUID) throws -> WKWebView {
+        guard !tabs.isInAgentSpace(id), tabs.item(id) != nil, let session = tabs.ensureSession(for: id) else {
+            throw AgentPageError.noPage
+        }
+        session.loadWebViewIfNeeded()
+        guard let view = session.webView else { throw AgentPageError.noPage }
+        compositorManager.markTabAccessed(id)
+        agentParked.remove(id)
+        if view.window == nil {
+            agentLastUse[id] = Date()
+            placeInHiddenHost(session)
+            scheduleAgentIdle()
+        }
+        AgentHub.shared.noteBorrowed(id)
+        return view
+    }
+
     /// A new tab in the Agent space, in the background: the agent's current tab stays its own,
     /// and no window changes what it shows. `scope` limits the sites it may open (none: any).
     /// Nil when there is no space to borrow logins from.
@@ -89,7 +109,13 @@ extension BrowserManager {
     /// Puts an agent page in the active window's hidden host when no open window holds it; a
     /// window that shows the Agent space takes it from there itself.
     func hostAgentPage(_ session: PageSession) {
-        guard tabs.isInAgentSpace(session.itemID), let view = session.webView,
+        guard tabs.isInAgentSpace(session.itemID) else { return }
+        placeInHiddenHost(session)
+    }
+
+    /// Puts a page in the active window's hidden host when no open window holds it.
+    private func placeInHiddenHost(_ session: PageSession) {
+        guard let view = session.webView,
               let window = ((windowRegistry?.activeWindow).flatMap { $0.isIncognito ? nil : $0 } ?? tabs.regularWindows.first)?.window,
               let content = window.contentView else { return }
         // Already in a window that is still open; a closed one no longer renders it.

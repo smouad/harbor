@@ -94,9 +94,20 @@ class Fixtures(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
 
+# The User-Agent header of the last page request for each fixture path (Harbor's own fetches,
+# such as the favicon finder reading the page, are left out).
+SEEN_AGENTS = {}
+
+
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+    def do_GET(self):
+        agent = self.headers.get("User-Agent", "")
+        if agent.startswith("Mozilla/"):
+            SEEN_AGENTS[self.path.split("?")[0]] = agent
+        super().do_GET()
 
 
 def serve_fixtures():
@@ -133,9 +144,62 @@ def tools_are_listed():
     names = {t["name"] for t in rpc("tools/list")["tools"]}
     for name in ["observe", "act", "read", "crawl", "upload", "screenshot", "dialogs", "jobs", "job_wait",
                  "task_start", "task_handoff", "approval_wait", "secrets", "record_start", "recipe_run",
-                 "recipe_repair", "schedule", "watch", "extract", "ocr", "site_tools", "site_tool_call", "evaluate"]:
+                 "recipe_repair", "schedule", "watch", "extract", "ocr", "site_tools", "site_tool_call", "evaluate", "tabs", "identity"]:
         assert name in names, f"missing {name}"
     assert "executeJavaScript" not in names
+
+
+@test
+def agent_pages_present_as_chrome_and_switch():
+    SEEN_AGENTS.pop("/article.html", None)
+    open_page("article.html")
+    assert "Chrome/" in SEEN_AGENTS.get("/article.html", ""), SEEN_AGENTS
+    seen = page("return { ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map(b => b.brand), vendor: navigator.vendor }")
+    assert "Chrome/" in seen["ua"] and "Google Chrome" in seen["brands"] and seen["vendor"] == "Google Inc.", seen
+    try:
+        result = call("identity", {"as": "safari", "reload": True})
+        assert "Version/" in result["userAgent"] and "Chrome/" not in result["userAgent"], result
+        assert "Chrome/" not in SEEN_AGENTS["/article.html"], SEEN_AGENTS
+        assert page("return navigator.userAgentData === undefined || !navigator.userAgentData.brands"), "shim ran under Safari"
+    finally:
+        call("identity", {"as": "default", "reload": True})
+    assert "Chrome/" in SEEN_AGENTS["/article.html"], SEEN_AGENTS
+
+
+@test
+def extensions_run_in_agent_tabs():
+    open_page("article.html")
+    mark = page("return document.documentElement.dataset.harborTestExtension || null")
+    if mark is None and os.environ.get("HARBOR_AGENT_CONFIG") == "Release":
+        raise Skip("a Release copy installs no test extension")
+    assert mark == "ran", f"the test extension's content script did not run: {mark}"
+
+
+@test
+def person_tabs_follow_the_setting():
+    try:
+        listing = call("tabs")
+    except ToolError as error:
+        assert "not let agents use their tabs" in str(error), error
+        call("read", {"tab": "current"}, expect_error=True)
+        return
+    # Runs before the task tests: taking a task over brings the Agent space up in the window.
+    tabs = [t for w in listing["windows"] for t in w["tabs"]]
+    if not tabs:
+        raise Skip("the copy's window has no tab of its own")
+    target = next((t for t in tabs if t.get("current")), tabs[0])
+    if listing["access"] == "ask":
+        held = call("read", {"tab": target["id"]})
+        assert held.get("needs_approval"), held
+        return
+    assert listing["access"] == "always", listing
+    seen = call("read", {"tab": target["id"], "url": f"{BASE}/article.html"})
+    assert "crawl" in str(seen), str(seen)[:300]
+    after = call("tabs")
+    entry = next(t for w in after["windows"] for t in w["tabs"] if t["id"] == target["id"])
+    assert entry.get("url", "").endswith("/article.html"), entry
+    # The Agent space's own tab is untouched, and a task cannot be combined with a person's tab.
+    call("read", {"tab": target["id"], "task": "t_none"}, expect_error=True)
 
 
 @test

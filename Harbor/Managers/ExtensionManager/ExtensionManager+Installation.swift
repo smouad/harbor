@@ -267,8 +267,11 @@ extension ExtensionManager {
         // install, listing everything it requests.
         let replacesStoreInstall = existing?.sourceStore != nil && store == nil
         let consent = Self.consentItems(for: staged, comparedTo: replacesStoreInstall ? nil : previous)
-        let needsConsent = existing == nil || replacesStoreInstall
+        var needsConsent = existing == nil || replacesStoreInstall
             || !consent.permissions.isEmpty || !consent.hosts.isEmpty
+        #if DEBUG
+        if sourceURL.path == Self.testExtensionPath { needsConsent = false }
+        #endif
         if needsConsent {
             guard interactive else {
                 Self.logger.info("Skipping update of '\(name, privacy: .public)': new version requests additional permissions")
@@ -749,6 +752,25 @@ extension ExtensionManager {
     }
 
     // MARK: - Persistence
+
+    #if DEBUG
+    /// `-HarborTestExtension <dir>`: an unpacked extension to install at launch without the consent
+    /// sheet, so the agent checks (scripts/tests/agent_e2e.py) can see extensions in a test copy.
+    /// Debug builds only; Release has no way past the sheet.
+    static let testExtensionPath: String? = {
+        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        return (arguments["HarborTestExtension"] as? String).flatMap { $0.hasPrefix("/") ? $0 : nil }
+    }()
+
+    func installTestExtensionIfAsked() {
+        guard let path = Self.testExtensionPath else { return }
+        installExtension(from: URL(fileURLWithPath: path, isDirectory: true)) { result in
+            if case .failure(let error) = result {
+                Self.logger.notice("Test extension not installed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+    #endif
 
     func loadInstalledExtensions() {
         let entities: [ExtensionEntity]

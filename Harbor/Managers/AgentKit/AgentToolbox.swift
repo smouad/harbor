@@ -35,6 +35,7 @@ struct AgentTool {
         var properties = properties
         if page == .agent {
             properties["task"] = ["type": "string", "description": "Task id from task_start; omit for the Agent space's current tab"]
+            properties["tab"] = ["type": "string", "description": "One of the person's own tabs instead: \"current\" or an id from tabs. Only when they allow it in Settings > Developer"]
         }
         var schema: [String: Any] = ["type": "object", "properties": properties]
         if !required.isEmpty { schema["required"] = required }
@@ -217,7 +218,7 @@ enum AgentError: LocalizedError {
 @MainActor
 enum AgentToolbox {
     /// Every built-in tool, by feature.
-    static let tools: [AgentTool] = pageTools + jobTools + taskTools + recipeTools + perceptionTools + siteTools
+    static let tools: [AgentTool] = pageTools + browserTools + jobTools + taskTools + recipeTools + perceptionTools + siteTools
 
     private static let byName = Dictionary(uniqueKeysWithValues: tools.map { ($0.definition.name, $0) })
 
@@ -249,7 +250,19 @@ enum AgentToolbox {
             }
             let task = tool.page == .agent ? named : nil
             let session: PageSession?
-            (session, webView) = try page(for: tool.page, task: task, browser: browser, window: window)
+            if tool.page == .agent, let tab = args.string("tab"), tab != "agent" {
+                if task != nil { throw AgentError.invalid("Pass task or tab, not both") }
+                switch try personTab(tab, browser: browser, window: window) {
+                case .ready(let item):
+                    webView = try browser.borrowedWebView(item: item)
+                    session = browser.tabs.session(for: item)
+                case .needsApproval(let request):
+                    return AgentResult.json(["ok": false, "needs_approval": request.id, "reason": request.reason,
+                                             "action": request.action]).mcp
+                }
+            } else {
+                (session, webView) = try page(for: tool.page, task: task, browser: browser, window: window)
+            }
             let call = AgentCall(name: name, args: args, browser: browser, window: window,
                                  task: task, session: session, webView: webView, budget: budget)
             result = try await tool.run(call)
@@ -263,6 +276,39 @@ enum AgentToolbox {
             AgentHub.shared.replay.record(task: named, tool: name, args: raw, result: result, started: started, webView: webView)
         }
         return result.mcp
+    }
+
+    enum PersonTab {
+        case ready(UUID)
+        case needsApproval(AgentApprovals.Request)
+    }
+
+    /// One of the person's own tabs, as the setting allows: refused, waiting for their OK, or ready.
+    static func personTab(_ reference: String, browser: BrowserManager, window: BrowserWindowState) throws -> PersonTab {
+        let tabs = browser.tabs
+        let access = tabs.settings.agentTabAccess
+        guard access != .off else {
+            throw AgentError.invalid("The person has not let agents use their tabs (Settings > Developer). Work in the Agent space instead.")
+        }
+        let item: UUID
+        if reference == "current" {
+            guard let selected = window.selectedItemID else { throw AgentError.invalid("The person has no tab open") }
+            item = selected
+        } else {
+            guard let parsed = UUID(uuidString: reference) else { throw AgentError.invalid("tab is \"current\" or an id from tabs") }
+            item = parsed
+        }
+        guard tabs.item(item) != nil, !tabs.isInAgentSpace(item) else {
+            throw AgentError.invalid("No such tab of the person's (Agent space tabs are used without tab)")
+        }
+        guard access == .ask else { return .ready(item) }
+        let session = tabs.session(for: item)
+        let title = session?.title ?? tabs.item(item)?.displayTitle ?? ""
+        switch AgentHub.shared.approvals.tabAccess(item: item, title: title, host: session?.url.host ?? "") {
+        case .allowed: return .ready(item)
+        case .needsApproval(let request): return .needsApproval(request)
+        case .refused(let why): throw AgentError.invalid(why)
+        }
     }
 
     /// Why a call without `task` may not use the Agent space's current tab: it belongs to a task,
