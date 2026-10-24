@@ -212,6 +212,12 @@ public final class TabsController {
         return privateWindows.first { $0.privateTree?.item(id) != nil }.map(Owner.privateWindow)
     }
 
+    /// True for an item in a private window's own tree. Those never reach the shared favicon cache.
+    public func isInPrivateWindow(_ id: UUID) -> Bool {
+        if case .privateWindow = owner(ofItem: id) { return true }
+        return false
+    }
+
     func owner(ofSpace id: UUID) -> Owner? {
         if tree.space(id) != nil { return .main }
         return privateWindows.first { $0.privateTree?.space(id) != nil }.map(Owner.privateWindow)

@@ -36,6 +36,8 @@ extension TabsController {
 public struct ItemFavicon: View {
     let item: Item
     let session: PageSession?
+    // Optional: a view hosted in AppKit may not inherit it, and a row then only reads the cache.
+    @Environment(TabsController.self) private var tabs: TabsController?
     @State private var cached: Image?
 
     public init(item: Item, session: PageSession?) {
@@ -51,8 +53,16 @@ public struct ItemFavicon: View {
             // the row, and the cached icon must be loaded then.
             .task(id: "\(item.url?.host ?? "")|\(session == nil)") {
                 session?.ensureFaviconLoaded()
-                guard let host = item.url?.host,
-                      let image = await FaviconCache.shared.cachedImage(for: host) else { return }
+                guard let host = item.url?.host else { return }
+                // With no page open, ask the site for its icon, unless the row is in a private
+                // window, whose hosts must not reach the shared cache or the network.
+                let image: PlatformImage?
+                if session == nil, let tabs, !tabs.isInPrivateWindow(item.id) {
+                    image = await FaviconCache.shared.loadOrFetch(host: host)
+                } else {
+                    image = await FaviconCache.shared.cachedImage(for: host)
+                }
+                guard let image else { return }
                 cached = Image(platformImage: image)
             }
     }

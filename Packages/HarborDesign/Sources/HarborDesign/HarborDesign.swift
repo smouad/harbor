@@ -75,7 +75,7 @@ public enum HarborDesign {
         public static let iconButton: CGFloat = 28
         public static let favicon: CGFloat = 16
         public static let essentialsTile: CGFloat = 46  // Arc's favorite tile: four of them fit a 228pt sidebar
-        public static let essentialsFavicon: CGFloat = 20
+        public static let essentialsFavicon: CGFloat = 16  // as big as a row's icon; Arc's are no larger
         public static let navRow: CGFloat = 28
         #if os(iOS)
         // The floating bar's control row. 50 clears the 44pt touch minimum with

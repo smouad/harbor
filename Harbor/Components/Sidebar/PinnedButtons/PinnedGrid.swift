@@ -208,7 +208,7 @@ private struct PinnedTile: View {
             PinnedTabView(
                 tabName: tabs.title(for: item),
                 tabURL: url,
-                tabIcon: ItemFavicon(item: item, session: session),
+                tabIcon: ItemFavicon(item: item, session: session).environment(tabs),
                 isActive: tabs.selectedItemID(in: windowState) == item.id,
                 isUnloaded: session?.isUnloaded ?? true,
                 hasLeftPinnedURL: tabs.hasLeftHome(item.id),

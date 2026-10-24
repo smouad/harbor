@@ -11,6 +11,7 @@
 
 import Foundation
 import SwiftUI
+import FaviconFinder
 
 public final class FaviconCache: @unchecked Sendable {
     public static let shared = FaviconCache()
@@ -26,6 +27,10 @@ public final class FaviconCache: @unchecked Sendable {
     /// Insertion order for LRU eviction.
     private var order: [String] = []
     private let lock = NSLock()
+    /// Hosts being fetched without a page, so a long tab list asks once per host.
+    private var fetching: [String: Task<PlatformImage?, Never>] = [:]
+    /// When a host's last page-less fetch failed; it is not asked again for ten minutes.
+    private var failedAt: [String: Date] = [:]
     private let queue = DispatchQueue(label: "favicon.cache", attributes: .concurrent)
 
     public let directory: URL = {
@@ -80,6 +85,41 @@ public final class FaviconCache: @unchecked Sendable {
                 continuation.resume(returning: modified.map { -$0.timeIntervalSinceNow > Self.maxAge } ?? false)
             }
         }
+    }
+
+    /// The cached icon for `host`, else one fetched now from the site itself, with no page open:
+    /// a tab that has never been opened (a restored or imported one) still shows its site's icon.
+    /// A failure is remembered for ten minutes, and `localhost` and bare IP hosts are skipped.
+    public func loadOrFetch(host: String) async -> PlatformImage? {
+        if let hit = await cachedImage(for: host) { return hit }
+        guard host.contains("."), !host.allSatisfy({ $0.isNumber || $0 == "." }) else { return nil }
+        if let failed = lock.withLock({ failedAt[host] }), -failed.timeIntervalSinceNow < 600 { return nil }
+        let task: Task<PlatformImage?, Never> = lock.withLock {
+            if let running = fetching[host] { return running }
+            let started = Task<PlatformImage?, Never> { await Self.download(host: host) }
+            fetching[host] = started
+            return started
+        }
+        let image = await task.value
+        lock.withLock {
+            fetching[host] = nil
+            if image == nil { failedAt[host] = Date() }
+        }
+        if let image { store(image, for: host) }
+        return image
+    }
+
+    /// The page's own icon through its <link> tags, else `/favicon.ico`.
+    private static func download(host: String) async -> PlatformImage? {
+        guard let root = URL(string: "https://\(host)/") else { return nil }
+        if let favicon = try? await FaviconFinder(url: root).fetchFaviconURLs().download().largest(),
+           let image = favicon.image?.image {
+            return image
+        }
+        guard let icon = URL(string: "/favicon.ico", relativeTo: root)?.absoluteURL,
+              let (data, response) = try? await URLSession.shared.data(from: icon),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return PlatformImage(data: data)
     }
 
     // MARK: - Store

@@ -559,7 +559,7 @@ extension TabsController {
     // MARK: - Folders
 
     @discardableResult
-    public func createFolder(title: String, in parent: Parent, after: UUID?) -> UUID? {
+    public func createFolder(title: String, in parent: Parent, after: UUID?, open: Bool = true) -> UUID? {
         let owner: TabsController.Owner?
         switch parent {
         case .favorites(let spaceID), .pinned(let spaceID), .tabs(let spaceID): owner = self.owner(ofSpace: spaceID)
@@ -570,7 +570,7 @@ extension TabsController {
         guard perform(owner, "createFolder", { try $0.createFolder(id: id, title: title, in: parent, after: after) }) != nil else {
             return nil
         }
-        openFolder(id)
+        if open { openFolder(id) }
         return id
     }
 

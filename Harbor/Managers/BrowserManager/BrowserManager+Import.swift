@@ -53,7 +53,7 @@ extension BrowserManager {
             case .tab(let tab):
                 importTabs([tab.url], into: parent, window: window)
             case .folder(let folder):
-                guard let folderID = tabs.createFolder(title: folder.title, in: parent, after: nil) else { continue }
+                guard let folderID = tabs.createFolder(title: folder.title, in: parent, after: nil, open: false) else { continue }
                 importItems(folder.items, into: .folder(itemID: folderID), window: window)
             }
         }
@@ -92,7 +92,7 @@ extension BrowserManager {
 
             importTabs(unfolderedBookmarks.map(\.url), into: .tabs(spaceID: spaceID), window: window)
             for (folderName, bookmarks) in folderGroups.sorted(by: { $0.key > $1.key }) {
-                guard let folderID = tabs.createFolder(title: folderName, in: .pinned(spaceID: spaceID), after: nil) else { continue }
+                guard let folderID = tabs.createFolder(title: folderName, in: .pinned(spaceID: spaceID), after: nil, open: false) else { continue }
                 importTabs(bookmarks.map(\.url), into: .folder(itemID: folderID), window: window)
             }
         }
