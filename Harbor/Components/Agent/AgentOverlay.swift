@@ -198,18 +198,22 @@ private struct AgentTaskRow: View {
                     if task.isPausedForPerson {
                         Button { AgentHub.shared.tasks.handBack(task) } label: { Image(systemName: "play.fill") }
                             .help("Hand back to the agent")
+                            .accessibilityLabel("Hand back to the agent")
                     } else {
                         Button { AgentHub.shared.tasks.takeOver(task, in: window) } label: { Image(systemName: "hand.raised") }
                             .help("Take over")
+                            .accessibilityLabel("Take over")
                     }
                 }
                 Button { browserManager.showDialog(AgentReplayDialog(task: task) { browserManager.dialogManager.closeDialog() }) } label: {
                     Image(systemName: "clock.arrow.circlepath")
                 }
                 .help("Replay")
+                .accessibilityLabel("Replay")
                 if !task.isFinished {
                     Button { AgentHub.shared.tasks.stop(task) } label: { Image(systemName: "stop.fill") }
                         .help("Stop")
+                        .accessibilityLabel("Stop")
                 }
             }
             .harborIconButtons()
