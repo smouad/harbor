@@ -150,11 +150,20 @@ private struct AgentTasksCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HarborDesign.Spacing.xs) {
-            Text("Agent tasks")
-                .font(HarborDesign.Font.captionStrong)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, HarborDesign.Spacing.md)
-                .padding(.top, HarborDesign.Spacing.sm)
+            HStack {
+                Text("Agent tasks")
+                    .font(HarborDesign.Font.captionStrong)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if hub.tasks.all.contains(where: \.isFinished) {
+                    Button("Clear") { hub.tasks.clearFinished() }
+                        .buttonStyle(RectNavButtonStyle())
+                        .controlSize(.small)
+                        .help("Remove finished tasks and close their tabs")
+                }
+            }
+            .padding(.leading, HarborDesign.Spacing.md)
+            .padding(.top, HarborDesign.Spacing.xs)
             ForEach(shown) { task in
                 AgentTaskRow(task: task, window: window)
             }

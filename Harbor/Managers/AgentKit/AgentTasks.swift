@@ -118,10 +118,23 @@ final class AgentTaskStore {
 
     func add(_ task: AgentTask) {
         all.append(task)
-        // Ended tasks stay listed for the session; keep the list short.
+        // Ended tasks stay listed for the session; keep the list short, and their tabs with it.
         let finished = all.filter(\.isFinished)
-        if finished.count > 30, let oldest = finished.first { all.removeAll { $0 === oldest } }
+        if finished.count > 30, let oldest = finished.first { remove([oldest]) }
         changed.fire()
+    }
+
+    /// Takes ended tasks off the list and closes their tabs.
+    func clearFinished() {
+        remove(all.filter(\.isFinished))
+        changed.fire()
+    }
+
+    private func remove(_ tasks: [AgentTask]) {
+        for task in tasks {
+            all.removeAll { $0 === task }
+            AgentHub.shared.browser?.closeAgentTab(task.itemID)
+        }
     }
 
     func set(_ task: AgentTask, _ status: AgentTask.Status) {

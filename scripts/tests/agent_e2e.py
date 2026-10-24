@@ -299,14 +299,15 @@ def tasks_scope_approvals_handoff_replay():
                                                   {"action": "click", "target": "#buy"}]})
     assert held["needs_approval"] and held["results"][1]["reason"] == "Spends money", held
     assert call("approval_wait", {"approval": held["needs_approval"], "timeout": 1})["decision"] == "pending"
-    assert page("return !!window.ordered") is False, "nothing happened before approval"
+    state = call("act", {"task": task, "actions": [{"action": "getText", "target": "#order-state"}]})
+    assert state["results"][0]["value"] == "no order", "nothing happened before approval"
     blocked = call("act", {"task": task, "actions": [{"action": "navigate", "url": "https://example.com/"}]}, expect_error=True)
     assert "outside this task's allowed sites" in blocked
     call("task_handoff", {"task": task, "reason": "Sign in"})
     paused = call("act", {"task": task, "actions": [{"action": "click", "target": "#save"}]}, expect_error=True)
     assert "the person has control" in paused
     assert call("task_wait", {"task": task, "timeout": 1})["status"] == "needs_you"
-    ended = call("task_end", {"task": task, "outcome": "done", "summary": "ok"})
+    ended = call("task_end", {"task": task, "outcome": "done", "summary": "ok", "closeTab": True})
     assert ended["status"] == "done"
     call("task_start", {"title": "E2E", "confirm": "never"}, expect_error=True)
     steps = call("task_replay", {"task": task})["steps"]
@@ -331,8 +332,9 @@ def scripts_in_tasks_need_approval():
     task = call("task_start", {"title": "E2E scripts", "url": f"{BASE}/form.html"})["task"]
     held = call("act", {"task": task, "actions": [{"action": "eval", "code": "document.getElementById('buy').click(); return 1"}]})
     assert held["needs_approval"] and "Runs a script" in held["results"][0]["reason"], held
-    call("task_end", {"task": task, "outcome": "done"})
-    assert page("return !!window.ordered") is False
+    state = call("act", {"task": task, "actions": [{"action": "getText", "target": "#order-state"}]})
+    assert state["results"][0]["value"] == "no order", "the script did not run"
+    call("task_end", {"task": task, "outcome": "done", "closeTab": True})
 
 
 @test

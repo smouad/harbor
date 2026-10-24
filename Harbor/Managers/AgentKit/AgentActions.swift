@@ -229,8 +229,25 @@ final class AgentActions {
             try await AgentInput.moveAlong(webView, from: lastPointer, to: CGPoint(x: x, y: y), viewport: viewport, steps: 14)
             try await Task.sleep(for: .milliseconds(Int.random(in: 60...160)))
         }
-        try AgentInput.click(webView, x: x, y: y, viewport: viewport, clickCount: clickCount)
         lastPointer = CGPoint(x: x, y: y)
+        // A page just put back into its host may not know where it is yet, and drops the press.
+        // Watch for the press to arrive; try once more, then fall back to a DOM click.
+        let probe: [String: Any] = target.map { ["target": $0] } ?? [:]
+        for attempt in 0..<2 {
+            let before = try await runtime("presses", probe) as? [String: Any] ?? [:]
+            try AgentInput.click(webView, x: x, y: y, viewport: viewport, clickCount: clickCount)
+            for _ in 0..<6 {
+                // A load or a new document means the press did something: never press again.
+                guard !webView.isLoading, let now = try? await runtime("presses", probe) as? [String: Any],
+                      now["document"] as? String == before["document"] as? String else { return }
+                if (now["count"] as? Int ?? 0) > (before["count"] as? Int ?? 0) { return }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            if attempt == 0 { try await Task.sleep(for: .milliseconds(150)) }
+        }
+        guard let target else { throw StepError.invalid("The click did not reach the page") }
+        AgentHub.log.notice("Native click did not land; used a DOM click on \(target, privacy: .public)")
+        _ = try await runtime("click", ["target": target])
     }
 
     private func scroll(target: String?, step: [String: Any], native: Bool) async throws -> Any? {

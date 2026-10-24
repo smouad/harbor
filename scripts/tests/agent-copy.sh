@@ -15,11 +15,17 @@ copy=/tmp/harbor-agent/Harbor.app
 files=/tmp/harbor-agent-files
 token_file="$HOME/Library/Application Support/$bundle_id/dev-mcp-token"
 
+# HARBOR_AGENT_CONFIG=Release checks the optimized build, which has crashed where Debug did not.
+config=${HARBOR_AGENT_CONFIG:-Debug}
+
 build() {
-    xcodebuild -scheme Harbor -configuration Debug -arch arm64 -derivedDataPath build \
+    local derived=build
+    [ "$config" = Release ] && derived=build-agent-release
+    xcodebuild -scheme Harbor -configuration "$config" -arch arm64 -derivedDataPath "$derived" \
+        ENABLE_CODE_COVERAGE=NO CLANG_COVERAGE_MAPPING=NO \
         CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO -quiet
     rm -rf /tmp/harbor-agent && mkdir -p /tmp/harbor-agent
-    ditto build/Build/Products/Debug/Harbor.app "$copy"
+    ditto "$derived/Build/Products/$config/Harbor.app" "$copy"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$copy/Contents/Info.plist"
     codesign --force --deep --sign - --entitlements "$PWD/Harbor/Harbor-CI.entitlements" "$copy" 2>/dev/null
 }

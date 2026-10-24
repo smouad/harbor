@@ -9,6 +9,7 @@
 <body>
 <h1>Checkout</h1>
 <p id="hover-state">not hovered</p>
+<p id="order-state">no order</p>
 <div class="row"><label for="name">Full name</label> <input id="name" name="name" placeholder="Your name"></div>
 <div class="row"><label for="pw">Password</label> <input id="pw" name="password" type="password"></div>
 <div class="row"><label>Country <select id="country"><option value="">Pick</option><option value="ma">Morocco</option><option value="de">Germany</option></select></label></div>
@@ -29,7 +30,7 @@
   window.events = [];
   const log = (e) => window.events.push({ type: e.type, id: e.target.id, trusted: e.isTrusted, key: e.key, value: e.target.value });
   for (const t of ["click", "input", "change", "keydown", "mouseover"]) document.addEventListener(t, log, true);
-  document.getElementById("buy").onclick = () => { window.ordered = true; };
+  document.getElementById("buy").onclick = () => { window.ordered = true; document.getElementById("order-state").textContent = "ordered"; };
   document.getElementById("save").onclick = () => { window.saved = (window.saved || 0) + 1; };
   document.getElementById("far-btn").onclick = () => { window.farClicked = true; };
   document.getElementById("dlg").onclick = () => { window.confirmed = confirm("Delete everything?"); window.prompted = prompt("Your nickname?", "anon"); alert("done"); };

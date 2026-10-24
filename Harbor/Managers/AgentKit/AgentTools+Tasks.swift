@@ -98,15 +98,17 @@ extension AgentToolbox {
     }
 
     private static let taskEnd = AgentTool(
-        "task_end", "Finish a task: outcome done or failed, with a one-line summary for the person. Its tab stays open for them.",
+        "task_end", "Finish a task: outcome done or failed, with a one-line summary for the person. Its tab stays open for them to see the result, unless closeTab: true.",
         page: .none,
-        properties: ["task": ["type": "string"], "outcome": ["type": "string", "enum": ["done", "failed"]], "summary": ["type": "string"]],
+        properties: ["task": ["type": "string"], "outcome": ["type": "string", "enum": ["done", "failed"]], "summary": ["type": "string"],
+                     "closeTab": ["type": "boolean"]],
         required: ["task", "outcome"]
     ) { call in
         let task = try task(call)
         let summary = call.args.string("summary").map { String($0.prefix(300)) }
         AgentHub.shared.tasks.set(task, call.args.string("outcome") == "failed" ? .failed(summary) : .done(summary))
         AgentHub.shared.approvals.dropAll(for: task.id)
+        if call.args.bool("closeTab") == true { call.browser.closeAgentTab(task.itemID) }
         return .json(task.summary)
     }
 

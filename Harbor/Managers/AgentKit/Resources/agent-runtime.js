@@ -337,6 +337,15 @@
     }
 
     let hovered = null;
+    const documentToken = Math.random().toString(36).slice(2);
+
+    // Counts trusted presses on a target's document, so Harbor can tell a native click landed.
+    const pressCounts = new WeakMap();
+    function armPress(doc) {
+        if (pressCounts.has(doc)) return;
+        pressCounts.set(doc, 0);
+        doc.addEventListener("mousedown", e => { if (e.isTrusted) pressCounts.set(doc, pressCounts.get(doc) + 1); }, true);
+    }
 
     function domClick(el) {
         const r = el.getBoundingClientRect();
@@ -352,6 +361,14 @@
         observe,
         point,
         describe: ({ target }) => describe(need(target)),
+        // Trusted presses seen so far on the target's document (starts watching on first call),
+        // with this document's token: a new token means the page changed under the click.
+        presses: ({ target }) => {
+            const el = target ? resolve(target) : null;
+            const doc = el ? el.ownerDocument : document;
+            armPress(doc);
+            return { count: pressCounts.get(doc), document: documentToken };
+        },
         // For Swift code that works on the element itself inside this world (upload).
         resolveRef: ({ ref }) => need(ref),
         exists: ({ target, visible = true }) => {
