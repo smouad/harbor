@@ -22,7 +22,7 @@ public struct SettingsTweaksTab: View {
                             footer: "Shows a download button on photos and videos, and saves the largest size the page offers to Downloads. Subdomains are included.")
 
             SiteListSection(sites: $settings.chromeIdentitySites, title: "Present as Chrome",
-                            footer: "These sites see Harbor as Google Chrome, for sites that turn Safari away or give it a lesser page. Subdomains are included. Takes effect on the next page load.")
+                            footer: "These sites see Harbor as Google Chrome, for sites that turn Safari away or give it a lesser page. Subdomains are included.")
 
             Section {
                 Toggle("Hide Reels", isOn: $settings.facebookHideReels)
