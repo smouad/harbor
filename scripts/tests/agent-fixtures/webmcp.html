@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>WebMCP fixture</title></head><body>
+<h1>Shop</h1><p id="cart">0 items</p>
+<script>
+  const ctx = document.modelContext || navigator.modelContext;
+  window.hasModelContext = !!ctx;
+  if (ctx) {
+    ctx.registerTool({
+      name: "add_to_cart", description: "Add an item to the cart",
+      inputSchema: { type: "object", properties: { item: { type: "string" }, qty: { type: "number" } }, required: ["item"] },
+      async execute({ item, qty = 1 }) {
+        window.cartCount = (window.cartCount || 0) + qty;
+        document.getElementById("cart").textContent = window.cartCount + " items";
+        return { content: [{ type: "text", text: `Added ${qty} ${item}` }] };
+      }
+    });
+    ctx.registerTool({ name: "search_products", description: "Search", inputSchema: { type: "object", properties: { q: { type: "string" } } },
+      execute: ({ q }) => ({ results: [q + " A", q + " B"] }) });
+  }
+</script></body></html>

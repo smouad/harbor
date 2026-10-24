@@ -80,6 +80,8 @@ Every visual value comes from `HarborDesign`: no literal radii, spacing, fonts o
 
 With Developer Mode on (Settings > Developer), each page records console, network, blocker and performance data, and the docked Web Inspector and element picker are available. Browser Control starts a local MCP server on `127.0.0.1:47823` so a coding agent can drive a separate Agent space. It is off by default and protected by a token only readable by your user.
 
+On top of it, `Harbor/Managers/AgentKit/` is the agent runtime: page tools that match Browser Bridge (`observe`, `act`, `read`, `upload`, `screenshot`) with native input, tasks that each get their own Agent space tab, allowed sites and an approval step for actions that spend, send, delete or sign in, a Keychain vault the agent types from without seeing, background jobs (crawl, batch reads), recipes recorded from real use that heal themselves when a page changes, schedules and page watches, WebMCP for sites that offer tools, and Vision OCR. The person sees each task as a card they can watch, take over, replay or stop. `scripts/tests/agent_e2e.py` checks it end to end against a copy started by `scripts/tests/agent-copy.sh`.
+
 ## Verifying a change
 
 There is no test target. Build, launch and watch the logs:

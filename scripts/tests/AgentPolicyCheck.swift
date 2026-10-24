@@ -1,0 +1,92 @@
+// Licensed under GPL-3.0. See LICENSE.
+//
+//  AgentPolicyCheck.swift
+//
+//  Checks AgentKit's browser-free rules: task scope, secret placeholders, sensitive actions and
+//  step templates. Run:
+//    xcrun swiftc -parse-as-library Harbor/Managers/AgentKit/AgentPolicy.swift scripts/tests/AgentPolicyCheck.swift -o /tmp/apc && /tmp/apc
+//
+
+import Foundation
+
+@main
+struct AgentPolicyCheck {
+    static func main() {
+        scope()
+        placeholders()
+        sensitivity()
+        templates()
+        print("AgentPolicyCheck passed")
+    }
+
+    static func scope() {
+        let allows = { (url: String, origins: [String]) in AgentScope.allows(URL(string: url)!, origins: origins) }
+        precondition(allows("https://evil.example/", []), "no list allows anything")
+        precondition(allows("https://shop.example.com/cart", ["example.com"]), "a bare host covers subdomains")
+        precondition(allows("https://example.com/", ["example.com"]))
+        precondition(!allows("https://example.com.evil.net/", ["example.com"]), "suffix must be a whole label")
+        precondition(!allows("https://notexample.com/", ["example.com"]), "suffix must be a whole label")
+        precondition(allows("https://a.b.example.com/", ["*.example.com"]))
+        precondition(allows("https://a.example.com/", [".example.com"]))
+        precondition(allows("http://127.0.0.1:18765/x", ["127.0.0.1"]), "a host entry ignores the port")
+        precondition(allows("http://localhost:3000/", ["http://localhost:3000"]), "an origin matches exactly")
+        precondition(!allows("http://localhost:3001/", ["http://localhost:3000"]), "an origin's port must match")
+        precondition(!allows("https://localhost:3000/", ["http://localhost:3000"]), "an origin's scheme must match")
+        precondition(allows("about:blank", ["example.com"]), "about:blank carries no origin")
+        precondition(!allows("https://other.org/", ["example.com", "example.net"]))
+        precondition(allows("https://WWW.Example.COM/", ["example.com"]), "hosts compare case-insensitively")
+        precondition(allows("https://example.com/", ["example.com/some/path"]), "a path in an entry is ignored")
+    }
+
+    static func placeholders() {
+        precondition(AgentPlaceholders.names(in: "{{secret:pw}} and {{ secret : api.key }}") == ["pw", "api.key"])
+        precondition(AgentPlaceholders.names(in: "plain {{other}} text").isEmpty)
+        let values = ["pw": "hunter2", "k": "K"]
+        precondition(AgentPlaceholders.fill("user:{{secret:pw}}!{{secret:k}}", lookup: { values[$0] }) == "user:hunter2!K")
+        precondition(AgentPlaceholders.fill("{{secret:missing}}", lookup: { values[$0] }) == nil, "an unknown secret types nothing")
+        precondition(AgentPlaceholders.fill("no secrets", lookup: { _ in nil }) == "no secrets")
+    }
+
+    static func sensitivity() {
+        func reason(_ action: String, role: String = "button", name: String = "", type: String = "", key: String = "", secret: Bool = false) -> String? {
+            var facts = AgentActionFacts(action: action)
+            facts.role = role
+            facts.name = name
+            facts.inputType = type
+            facts.key = key
+            facts.typedSecret = secret
+            facts.host = "shop.example"
+            return AgentSensitivity.reason(for: facts)
+        }
+        precondition(reason("click", name: "Place order") == "Spends money")
+        precondition(reason("click", name: "Buy now") == "Spends money")
+        precondition(reason("click", name: "Delete repository") == "Deletes something")
+        precondition(reason("click", name: "Send message") == "Sends or publishes something")
+        precondition(reason("click", name: "Sign in") == "Signs in or grants access")
+        precondition(reason("click", name: "Display settings") == nil, "display is not pay")
+        precondition(reason("click", name: "Repost options") == nil, "repost is not post")
+        precondition(reason("click", name: "Next page") == nil)
+        precondition(reason("submit", name: "") == "Submits a form")
+        precondition(reason("fill", role: "textbox", name: "Password", type: "password") != nil, "a password the vault did not supply")
+        precondition(reason("fill", role: "textbox", name: "Password", type: "password", secret: true) == nil, "a vault password is fine")
+        precondition(reason("fill", role: "textbox", name: "Card number") == "Enters payment details")
+        precondition(reason("fill", role: "textbox", name: "Search") == nil)
+        precondition(reason("press", role: "textbox", name: "Password", type: "password", key: "Enter") == "Signs in")
+        precondition(reason("scroll") == nil)
+        precondition(reason("eval", role: "", name: "") == "Runs a script on shop.example", "scripts ask once per task")
+        precondition(AgentSensitivity.matchesWord("pay", in: "display then pay now"), "a later whole-word hit counts")
+    }
+
+    static func templates() {
+        let scopes: [String: Any] = ["vars": ["q": "milk", "n": 3, "list": ["a", "b"], "user": ["name": "Ada"]]]
+        precondition(AgentTemplate.fill("${vars.q}", scopes: scopes) as? String == "milk")
+        precondition(AgentTemplate.fill("${vars.n}", scopes: scopes) as? Int == 3, "a lone placeholder keeps its type")
+        precondition((AgentTemplate.fill("${vars.list}", scopes: scopes) as? [String]) == ["a", "b"])
+        precondition(AgentTemplate.fill("buy ${vars.n} x ${vars.q}", scopes: scopes) as? String == "buy 3 x milk")
+        precondition(AgentTemplate.fill("hi ${vars.user.name}", scopes: scopes) as? String == "hi Ada")
+        precondition(AgentTemplate.fill("${vars.list.1}", scopes: scopes) as? String == "b")
+        precondition(AgentTemplate.fill("${vars.nope} stays", scopes: scopes) as? String == "${vars.nope} stays")
+        let step = AgentTemplate.fill(["action": "fill", "text": "${vars.q}", "nested": ["x": "${vars.n}"]], scopes: scopes) as! [String: Any]
+        precondition(step["text"] as? String == "milk" && (step["nested"] as? [String: Any])?["x"] as? Int == 3)
+    }
+}

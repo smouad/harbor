@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Recipe fixture</title></head><body>
+<h1>Notes</h1>
+<label for="title">Title</label> <input id="title">
+<button id="add" data-testid="add-note" onclick="const li=document.createElement('li'); li.textContent=document.getElementById('title').value; document.getElementById('notes').append(li)">Add note</button>
+<ul id="notes"></ul>
+</body></html>
