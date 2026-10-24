@@ -140,3 +140,7 @@ docs/*
 tasks/
 .superpowers/
 .playwright-mcp/
+
+# Landing page: the 0.1.0 DMG and the review captures are not source
+site/downloads/
+site/screenshots/

@@ -7,6 +7,8 @@
 # Harbor/Info.plist), so publishing a release is what makes the sidebar offer the update. The build
 # number is a timestamp, which only grows, because Sparkle orders updates by it. The version is what
 # people see. --dry-run does everything but the upload and leaves the files in build-release/dist.
+# The release carries the Sparkle zip, appcast.xml and a Harbor-<version>.dmg for the landing page,
+# which scripts/deploy-site.sh then refreshes from the new release.
 #
 # Updates are signed with the EdDSA key that generate_keys put in the login keychain; the matching
 # public key is SUPublicEDKey in Info.plist. Back the private key up with `generate_keys -x <file>`:
@@ -74,6 +76,10 @@ ditto -c -k --sequesterRsrc --keepParent "$app" "$dist/$zip"
     -o "$dist/appcast.xml"
 grep -q "sparkle:edSignature" "$dist/appcast.xml" || { echo "appcast.xml has no signature" >&2; exit 1; }
 
+# Outside dist, which generate_appcast has already read; the page links this one.
+dmg="build-release/dmg/Harbor-$version.dmg"
+scripts/make-dmg.sh "$app" "$dmg"
+
 if [ "$dry_run" = 1 ]; then
     echo "Dry run: $tag (build $build) is in $dist, nothing uploaded"
     exit 0
@@ -84,6 +90,7 @@ git tag -a "$tag" -m "Harbor $version"
 git push origin "$tag"
 notes_flag=(--generate-notes)
 [ -z "$notes" ] || notes_flag=(--notes-file "$notes")
-gh release create "$tag" "$dist/$zip" "$dist/appcast.xml" --repo "$repo" --verify-tag \
+gh release create "$tag" "$dist/$zip" "$dist/appcast.xml" "$dmg" --repo "$repo" --verify-tag \
     --title "Harbor $version" "${notes_flag[@]}"
 echo "Published https://github.com/$repo/releases/tag/$tag"
+scripts/deploy-site.sh
