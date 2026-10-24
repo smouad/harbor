@@ -148,6 +148,18 @@ public class BrowserWindowState {
     /// The split pair shown in this window, if any.
     public var split: SplitRecord?
 
+    /// The recent-tabs switcher, shown from the first Control-Tab until Control is let go.
+    public var tabSwitcher: TabSwitcher?
+
+    public struct TabSwitcher: Equatable {
+        public var items: [UUID]
+        public var index: Int
+        public init(items: [UUID], index: Int) {
+            self.items = items
+            self.index = index
+        }
+    }
+
     /// A private window's in-memory tree: one temporary space. Never saved. nil for regular windows.
     public var privateTree: TabTree?
 

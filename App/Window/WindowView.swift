@@ -49,6 +49,14 @@ struct WindowView: View {
             CommandPaletteView()
             DialogView()
 
+            // Control-Tab: the recent-tabs list, shown until Control is let go.
+            if let switcher = windowState.tabSwitcher {
+                TabSwitcherView(switcher: switcher)
+                    .environment(browserManager.tabs)
+                    .transition(.opacity)
+                    .zIndex(9500)
+            }
+
             // Peek overlay for external link previews
             PeekOverlayView()
 

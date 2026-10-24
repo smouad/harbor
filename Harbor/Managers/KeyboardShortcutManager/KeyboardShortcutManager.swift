@@ -18,7 +18,7 @@ class KeyboardShortcutManager {
     private let userDefaults = UserDefaults.standard
     private let shortcutsKey = "keyboard.shortcuts"
     private let shortcutsVersionKey = "keyboard.shortcuts.version"
-    private let currentVersion = 8 // Increment when adding new shortcuts; 8 added Pick Element (Cmd+Shift+X)
+    private let currentVersion = 9 // Increment when adding new shortcuts; 8 added Pick Element (Cmd+Shift+X), 9 the recent-tabs switcher (Control-Tab), Go to Space and Pin Tab
 
     /// Hash-based storage for O(1) lookup: ["cmd+t": KeyboardShortcut]
     private var shortcutMap: [String: KeyboardShortcut] = [:]
@@ -43,7 +43,7 @@ class KeyboardShortcutManager {
     /// not affected.
     private static let neverYieldedToPageReports: Set<ShortcutAction> = [
         .closeTab, .closeWindow, .closeBrowser, .newTab, .newWindow,
-        .focusAddressBar, .openCommandPalette, .toggleFullScreen,
+        .focusAddressBar, .openCommandPalette, .toggleFullScreen, .recentTab, .recentTabBack,
     ]
 
     init() {
@@ -72,6 +72,7 @@ class KeyboardShortcutManager {
 
             // Check if we need to merge new shortcuts
             if savedVersion < currentVersion {
+                migrateSidebarOrderTabKeys(from: savedVersion)
                 mergeWithDefaults()
                 userDefaults.set(currentVersion, forKey: shortcutsVersionKey)
             }
@@ -84,6 +85,26 @@ class KeyboardShortcutManager {
             userDefaults.set(currentVersion, forKey: shortcutsVersionKey)
             saveShortcuts()
         }
+    }
+
+    /// Version 9 gave Control-Tab to the recent-tabs switcher, as in Arc. Next and Previous Tab, which
+    /// held it, move to Command-Option-Down and Up (Arc's) unless the person had chosen other keys.
+    private func migrateSidebarOrderTabKeys(from savedVersion: Int) {
+        guard savedVersion < 9 else { return }
+        let moves: [(ShortcutAction, KeyCombination, KeyCombination)] = [
+            (.nextTab, KeyCombination(key: "tab", modifiers: [.control]),
+             KeyCombination(key: "downarrow", modifiers: [.command, .option])),
+            (.previousTab, KeyCombination(key: "tab", modifiers: [.control, .shift]),
+             KeyCombination(key: "uparrow", modifiers: [.command, .option])),
+        ]
+        for (action, old, new) in moves {
+            guard var shortcut = shortcutMap[old.lookupKey], shortcut.action == action,
+                  shortcutMap[new.lookupKey] == nil else { continue }
+            shortcutMap.removeValue(forKey: old.lookupKey)
+            shortcut.keyCombination = new
+            shortcutMap[new.lookupKey] = shortcut
+        }
+        saveShortcuts()
     }
 
     private func mergeWithDefaults() {
@@ -203,6 +224,10 @@ class KeyboardShortcutManager {
         }
 
         let keyCode = event.keyCode
+        if keyCode == 53, let window = windowRegistry?.activeWindow, window.tabSwitcher != nil {
+            finishTabSwitcher(in: window, cancel: true)
+            return true
+        }
         if keyCode == 36 || keyCode == 76 { // 36 = Return, 76 = Enter (numpad)
             let hasModifiers = event.modifierFlags.contains(.command) ||
                               event.modifierFlags.contains(.option) ||
@@ -266,8 +291,39 @@ class KeyboardShortcutManager {
             }
         }
 
-        executeAction(shortcut.action)
+        switch shortcut.action {
+        case .recentTab:
+            cycleRecentTabs(by: 1)
+        case .recentTabBack:
+            cycleRecentTabs(by: -1)
+        default:
+            executeAction(shortcut.action)
+        }
         return true
+    }
+
+    // MARK: - Recent tabs (Control-Tab)
+
+    /// Opens the switcher on the second most recent tab, or steps through it while Control is held.
+    /// Letting go of Control picks the highlighted tab (`finishTabSwitcher`).
+    private func cycleRecentTabs(by step: Int) {
+        guard let window = windowRegistry?.activeWindow, let tabs = browserManager?.tabs else { return }
+        if var switcher = window.tabSwitcher, !switcher.items.isEmpty {
+            switcher.index = (switcher.index + step + switcher.items.count) % switcher.items.count
+            window.tabSwitcher = switcher
+            return
+        }
+        let items = tabs.recentItems(in: window)
+        guard items.count > 1 else { return }
+        window.tabSwitcher = BrowserWindowState.TabSwitcher(items: items, index: step > 0 ? 1 : items.count - 1)
+    }
+
+    /// Selects the highlighted tab, or none when `cancel` (Escape).
+    private func finishTabSwitcher(in window: BrowserWindowState, cancel: Bool) {
+        guard let switcher = window.tabSwitcher else { return }
+        window.tabSwitcher = nil
+        guard !cancel, switcher.items.indices.contains(switcher.index) else { return }
+        browserManager?.tabs.select(switcher.items[switcher.index], in: window)
     }
     
     /// Forward a keyboard event directly to the active WebView
@@ -493,6 +549,10 @@ class KeyboardShortcutManager {
                 if let window { tabs.selectLast(in: window) }
             case .duplicateTab:
                 if let window, let selected = window.selectedItemID { tabs.duplicate(selected, in: window) }
+            case .togglePinTab:
+                if let window, let selected = window.selectedItemID { tabs.togglePin(selected, in: window) }
+            case .recentTab, .recentTabBack:
+                break // Handled in executeShortcut, so the switcher cycles in event order.
             case .toggleTopBarAddressView:
                 browserManager.toggleTopBarAddressView()
 
@@ -501,6 +561,9 @@ class KeyboardShortcutManager {
                 if let window { tabs.selectNextSpace(in: window) }
             case .previousSpace:
                 if let window { tabs.selectPreviousSpace(in: window) }
+            case .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4, .goToSpace5, .goToSpace6, .goToSpace7, .goToSpace8, .goToSpace9:
+                let number = Int(action.rawValue.components(separatedBy: "_").last ?? "0") ?? 1
+                if let window { tabs.goToSpace(number: number, in: window) }
 
             // Window Management
             case .newWindow:
@@ -572,8 +635,17 @@ class KeyboardShortcutManager {
     nonisolated(unsafe) private var eventMonitor: Any?
 
     private func setupGlobalMonitor() {
-        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self = self else { return event }
+
+            // Control let go: the recent-tabs switcher picks the highlighted tab.
+            if event.type == .flagsChanged {
+                if !event.modifierFlags.contains(.control),
+                   let window = self.windowRegistry?.windows.values.first(where: { $0.tabSwitcher != nil }) {
+                    self.finishTabSwitcher(in: window, cancel: false)
+                }
+                return event
+            }
 
             // Try to execute shortcut - if handled, consume event
             if self.executeShortcut(event) {

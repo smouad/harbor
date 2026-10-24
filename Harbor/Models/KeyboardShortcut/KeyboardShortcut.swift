@@ -55,11 +55,23 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
     case goToTab8 = "go_to_tab_8"
     case goToLastTab = "go_to_last_tab"
     case duplicateTab = "duplicate_tab"
+    case recentTab = "recent_tab"
+    case recentTabBack = "recent_tab_back"
+    case togglePinTab = "toggle_pin_tab"
     case toggleTopBarAddressView = "toggle_top_bar_address_view"
 
     // Space Management
     case nextSpace = "next_space"
     case previousSpace = "previous_space"
+    case goToSpace1 = "go_to_space_1"
+    case goToSpace2 = "go_to_space_2"
+    case goToSpace3 = "go_to_space_3"
+    case goToSpace4 = "go_to_space_4"
+    case goToSpace5 = "go_to_space_5"
+    case goToSpace6 = "go_to_space_6"
+    case goToSpace7 = "go_to_space_7"
+    case goToSpace8 = "go_to_space_8"
+    case goToSpace9 = "go_to_space_9"
 
     // Window Management
     case newWindow = "new_window"
@@ -116,9 +128,21 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         case .goToTab8: return "Go to Tab 8"
         case .goToLastTab: return "Go to Last Tab"
         case .duplicateTab: return "Duplicate Tab"
+        case .recentTab: return "Recent Tabs"
+        case .recentTabBack: return "Recent Tabs, Backward"
+        case .togglePinTab: return "Pin or Unpin Tab"
         case .toggleTopBarAddressView: return "Toggle Top Bar Address View"
         case .nextSpace: return "Next Space"
         case .previousSpace: return "Previous Space"
+        case .goToSpace1: return "Go to Space 1"
+        case .goToSpace2: return "Go to Space 2"
+        case .goToSpace3: return "Go to Space 3"
+        case .goToSpace4: return "Go to Space 4"
+        case .goToSpace5: return "Go to Space 5"
+        case .goToSpace6: return "Go to Space 6"
+        case .goToSpace7: return "Go to Space 7"
+        case .goToSpace8: return "Go to Space 8"
+        case .goToSpace9: return "Go to Space 9"
         case .newWindow: return "New Window"
         case .closeWindow: return "Close Window"
         case .closeBrowser: return "Close Browser"
@@ -152,9 +176,9 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         switch self {
         case .goBack, .goForward, .refresh, .clearCookiesAndRefresh:
             return .navigation
-        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .toggleTopBarAddressView:
+        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .recentTab, .recentTabBack, .togglePinTab, .toggleTopBarAddressView:
             return .tabs
-        case .nextSpace, .previousSpace:
+        case .nextSpace, .previousSpace, .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4, .goToSpace5, .goToSpace6, .goToSpace7, .goToSpace8, .goToSpace9:
             return .spaces
         case .newWindow, .closeWindow, .closeBrowser, .toggleFullScreen:
             return .window
@@ -221,13 +245,28 @@ struct KeyCombination: Hashable, Codable {
     let modifiers: Modifiers
 
     init(key: String, modifiers: Modifiers = []) {
-        self.key = key.lowercased()
+        self.key = Self.normalized(key)
         self.modifiers = modifiers
+    }
+
+    /// One spelling per key. AppKit reports Tab as "\t", Space as " " and the arrows as
+    /// private-use characters, so a combination written with a name never matched an event.
+    static func normalized(_ key: String) -> String {
+        switch key {
+        case "\t": return "tab"
+        case " ": return "space"
+        case "\u{F700}": return "uparrow"
+        case "\u{F701}": return "downarrow"
+        case "\u{F702}": return "leftarrow"
+        case "\u{F703}": return "rightarrow"
+        default: return key.lowercased()
+        }
     }
 
     var displayString: String {
         var parts = modifiers.displayStrings
-        parts.append(key.uppercased())
+        let glyphs = ["tab": "⇥", "space": "Space", "uparrow": "↑", "downarrow": "↓", "leftarrow": "←", "rightarrow": "→"]
+        parts.append(glyphs[Self.normalized(key)] ?? key.uppercased())
         return parts.joined(separator: " + ")
     }
 
@@ -241,7 +280,7 @@ struct KeyCombination: Hashable, Codable {
         let keyWithModifiers = event.characters?.lowercased() ?? ""
 
         // Match if either form matches (handles bracket keys on different layouts)
-        let keyMatches = (keyWithoutModifiers == key) || (keyWithModifiers == key)
+        let keyMatches = (Self.normalized(keyWithoutModifiers) == Self.normalized(key)) || (Self.normalized(keyWithModifiers) == Self.normalized(key))
 
         let modifierMatches =
             (modifiers.contains(.command) == (event.modifierFlags.contains(.command))) &&
@@ -259,7 +298,7 @@ struct KeyCombination: Hashable, Codable {
         if modifiers.contains(.option) { parts.append("opt") }
         if modifiers.contains(.control) { parts.append("ctrl") }
         if modifiers.contains(.shift) { parts.append("shift") }
-        parts.append(key.lowercased())
+        parts.append(Self.normalized(key))
         return parts.joined(separator: "+")
     }
 
@@ -267,7 +306,8 @@ struct KeyCombination: Hashable, Codable {
     init?(from event: NSEvent) {
         // Use charactersIgnoringModifiers for consistent handling of bracket keys
         // This ensures Cmd+[ works correctly on US keyboards where [ requires Shift
-        guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else { return nil }
+        guard let raw = event.charactersIgnoringModifiers, !raw.isEmpty else { return nil }
+        let key = Self.normalized(raw)
 
         var modifiers: Modifiers = []
         if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
@@ -313,8 +353,11 @@ extension KeyboardShortcut {
             KeyboardShortcut(action: .newTab, keyCombination: KeyCombination(key: "t", modifiers: [.command])),
             KeyboardShortcut(action: .closeTab, keyCombination: KeyCombination(key: "w", modifiers: [.command])),
             KeyboardShortcut(action: .undoCloseTab, keyCombination: KeyCombination(key: "z", modifiers: [.command])),
-            KeyboardShortcut(action: .nextTab, keyCombination: KeyCombination(key: "tab", modifiers: [.control])),
-            KeyboardShortcut(action: .previousTab, keyCombination: KeyCombination(key: "tab", modifiers: [.control, .shift])),
+            KeyboardShortcut(action: .nextTab, keyCombination: KeyCombination(key: "downarrow", modifiers: [.command, .option])),
+            KeyboardShortcut(action: .previousTab, keyCombination: KeyCombination(key: "uparrow", modifiers: [.command, .option])),
+            KeyboardShortcut(action: .recentTab, keyCombination: KeyCombination(key: "tab", modifiers: [.control])),
+            KeyboardShortcut(action: .recentTabBack, keyCombination: KeyCombination(key: "tab", modifiers: [.control, .shift])),
+            KeyboardShortcut(action: .togglePinTab, keyCombination: KeyCombination(key: "d", modifiers: [.command])),
             KeyboardShortcut(action: .goToTab1, keyCombination: KeyCombination(key: "1", modifiers: [.command])),
             KeyboardShortcut(action: .goToTab2, keyCombination: KeyCombination(key: "2", modifiers: [.command])),
             KeyboardShortcut(action: .goToTab3, keyCombination: KeyCombination(key: "3", modifiers: [.command])),
@@ -330,6 +373,15 @@ extension KeyboardShortcut {
             // Space Management
             KeyboardShortcut(action: .nextSpace, keyCombination: KeyCombination(key: "]", modifiers: [.command, .control])),
             KeyboardShortcut(action: .previousSpace, keyCombination: KeyCombination(key: "[", modifiers: [.command, .control])),
+            KeyboardShortcut(action: .goToSpace1, keyCombination: KeyCombination(key: "1", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace2, keyCombination: KeyCombination(key: "2", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace3, keyCombination: KeyCombination(key: "3", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace4, keyCombination: KeyCombination(key: "4", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace5, keyCombination: KeyCombination(key: "5", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace6, keyCombination: KeyCombination(key: "6", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace7, keyCombination: KeyCombination(key: "7", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace8, keyCombination: KeyCombination(key: "8", modifiers: [.control])),
+            KeyboardShortcut(action: .goToSpace9, keyCombination: KeyCombination(key: "9", modifiers: [.control])),
 
             // Window Management
             KeyboardShortcut(action: .newWindow, keyCombination: KeyCombination(key: "n", modifiers: [.command])),

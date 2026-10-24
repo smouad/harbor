@@ -239,6 +239,43 @@ extension TabsController {
         select(order[next], in: window)
     }
 
+    /// The tabs of the window's space, the one on screen first and then the rest by when each was
+    /// last selected. Tabs not selected since launch follow in sidebar order.
+    public func recentItems(in window: BrowserWindowState) -> [UUID] {
+        guard let spaceID = window.spaceID else { return [] }
+        let source = tree(owner(of: window))
+        let recent = window.recentItemsBySpace[spaceID, default: []].reversed()
+            .filter { source.item($0).map { !$0.isFolder } ?? false }
+        var seen = Set<UUID>()
+        var ordered = Array(recent).filter { seen.insert($0).inserted }
+        if let current = window.selectedItemID, let at = ordered.firstIndex(of: current), at != 0 {
+            ordered.remove(at: at)
+            ordered.insert(current, at: 0)
+        }
+        ordered += displayOrder(in: window).filter { seen.insert($0).inserted }
+        return Array(ordered.prefix(Self.recentLimit))
+    }
+
+    /// Shows the space at 1-based `number` in the order of the space dots.
+    public func goToSpace(number: Int, in window: BrowserWindowState) {
+        let spaces = tree(owner(of: window)).orderedSpaces
+        guard spaces.indices.contains(number - 1) else { return }
+        setSpace(spaces[number - 1].id, in: window)
+    }
+
+    /// Pins a tab in the tabs section, or unpins a pinned tab or favorite.
+    public func togglePin(_ itemID: UUID, in window: BrowserWindowState) {
+        let source = tree(owner(of: window))
+        guard let item = source.item(itemID), !item.isFolder, let spaceID = source.spaceID(of: itemID) else { return }
+        switch item.parent {
+        case .tabs: pin(itemID, to: .pinned(spaceID: spaceID))
+        case .pinned, .favorites: unpin(itemID)
+        case .folder:
+            // Inside a folder or a trail: pin it only when it sits in the tabs section's trail.
+            if source.scope(of: itemID) == .device { pin(itemID, to: .pinned(spaceID: spaceID)) } else { unpin(itemID) }
+        }
+    }
+
     /// 0-based over `displayOrder(in:)`.
     public func select(index: Int, in window: BrowserWindowState) {
         let order = displayOrder(in: window)
