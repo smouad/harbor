@@ -180,6 +180,8 @@ public final class PageSession: NSObject, Identifiable {
     /// The user agent this page presents, set by an agent for one page; nil follows the
     /// settings (ChromeIdentity). Applied from the next main-frame load.
     @ObservationIgnored public var userAgentOverride: String?
+    /// Main-frame loads `decidePolicyFor` started again for a new user agent, latest last.
+    @ObservationIgnored var userAgentRestarts: [URL] = []
     @ObservationIgnored public var onLinkHover: ((String?) -> Void)? = nil
     @ObservationIgnored public var onCommandHover: ((String?) -> Void)? = nil
     @ObservationIgnored public var pendingContextMenuPayload: WebContextMenuPayload?

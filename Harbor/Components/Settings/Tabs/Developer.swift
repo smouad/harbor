@@ -9,10 +9,12 @@
 import HarborSettings
 import SwiftUI
 import HarborDesign
+import HarborWeb
 
 struct SettingsDeveloperTab: View {
     @Environment(\.harborSettings) var harborSettings
     @EnvironmentObject var browserManager: BrowserManager
+    @State private var chromeSites = ChromeIdentity.learned
 
     var body: some View {
         @Bindable var settings = harborSettings
@@ -62,6 +64,26 @@ struct SettingsDeveloperTab: View {
                     }
                     Toggle("Extensions in agent tabs", isOn: $settings.agentExtensionsEnabled)
                     Toggle("Switch to Chrome where Safari is turned away", isOn: $settings.agentPresentsAsChrome)
+                    if !chromeSites.isEmpty {
+                        Text("Agents present as Chrome to")
+                            .font(HarborDesign.Font.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(chromeSites, id: \.self) { site in
+                            LabeledContent {
+                                Button {
+                                    ChromeIdentity.forget(site)
+                                    chromeSites = ChromeIdentity.learned
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Forget \(site)")
+                            } label: {
+                                Text(site)
+                            }
+                        }
+                    }
                 } header: {
                     Text("Agents")
                 } footer: {
@@ -74,5 +96,6 @@ struct SettingsDeveloperTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { chromeSites = ChromeIdentity.learned }
     }
 }

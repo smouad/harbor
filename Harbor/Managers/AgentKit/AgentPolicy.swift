@@ -192,18 +192,20 @@ enum AgentSensitivity {
 // MARK: - Upload paths
 
 /// Which of the person's files an agent may upload. Anything they can read, except where keys,
-/// passwords and sign-ins live: hidden files and folders in the home folder (.ssh, .aws, shell
-/// history), the Library folder apart from iCloud Drive and cloud storage, and system files.
+/// passwords and sign-ins live: anything hidden (.ssh, .aws, shell history, a project's .env or
+/// .git, and macOS's /.nofollow and /.resolve path prefixes, which skip symlink resolution), the
+/// Library folder apart from iCloud Drive and cloud storage, and system files. Check the path the
+/// kernel gives for the opened file (F_GETPATH), not the one asked for.
 enum AgentUploadPaths {
-    /// Why `path` (absolute, symlinks resolved) may not be uploaded; nil when it may.
+    /// Why `path` (absolute, canonical) may not be uploaded; nil when it may.
     static func refusal(_ path: String, home: String) -> String? {
         let parts = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        if parts.contains(where: { $0.hasPrefix(".") }) {
+            return "hidden files and folders hold keys and credentials"
+        }
         let homeParts = URL(fileURLWithPath: home).standardizedFileURL.pathComponents
         if parts.count > homeParts.count, Array(parts.prefix(homeParts.count)) == homeParts {
             let inside = parts[homeParts.count...]
-            if inside.first?.hasPrefix(".") == true {
-                return "hidden files in the home folder hold keys and credentials"
-            }
             if inside.first == "Library", !(inside.count > 1 && cloudFolders.contains(inside.dropFirst().first!)) {
                 return "the Library folder holds passwords, cookies and app data"
             }

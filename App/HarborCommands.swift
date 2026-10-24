@@ -290,7 +290,7 @@ struct HarborCommands: Commands {
                         Button("Record Recipe in This Tab") {
                             browserManager.recordRecipeInCurrentTab()
                         }
-                        .disabled(browserManager.tabs.activeWindowSession == nil)
+                        .disabled(browserManager.tabs.activeWindowSession.map { $0.isPrivate } ?? true)
                     }
                 }
             }

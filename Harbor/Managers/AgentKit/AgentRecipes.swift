@@ -242,6 +242,10 @@ enum AgentRecipeRunner {
         /// `foreach` items by their `as` name, readable as `${item.x}`.
         var aliases: [String: Any] = [:]
         var failed: [[String: Any]] = []
+        /// Jumps taken, against `maxJumps`.
+        var jumps = 0
+        /// Targets that healed this run, by step path, so a step in a loop heals once.
+        var healedTargets: [String: String] = [:]
 
         init(recipe: AgentRecipe, inputs: [String: Any], actions: AgentActions, job: AgentJob, task: AgentTask?, item: UUID) {
             self.recipe = recipe
@@ -262,10 +266,18 @@ enum AgentRecipeRunner {
     /// (`steps` or `else`) the next index is in.
     private typealias StepPath = [(index: Int, branch: String)]
 
-    /// A run stops after this many steps, so a `goto` loop cannot run forever.
-    private static let maxSteps = 5000
+    /// A run stops after this many jumps (goto, onFail goto), so a goto loop cannot run forever,
+    /// and after this many steps in all.
+    private static let maxJumps = 1000
+    private static let maxSteps = 200_000
 
     private struct Jump: Error { let id: String }
+
+    /// The person said no to a step: never retried, never skipped by onFail.
+    private struct Denied: LocalizedError {
+        let step: String
+        var errorDescription: String? { "\(step) was not approved" }
+    }
 
     private static func run(_ original: AgentRecipe, inputs: [String: Any], job: AgentJob, task: AgentTask?, item: UUID) async throws -> [String: Any] {
         guard let browser = AgentHub.shared.browser else { throw AgentError.noPage }
@@ -273,6 +285,8 @@ enum AgentRecipeRunner {
         let actions = AgentActions(webView: try browser.agentWebView(item: item), task: task,
                                    deadline: Date().addingTimeInterval(3600), vars: inputs)
         let run = Run(recipe: original, inputs: inputs, actions: actions, job: job, task: task, item: item)
+        // Steps read ${input.x} from the first one on.
+        actions.scopes = run.scopes
         do {
             try await runBlock(original.steps, path: [], run: run)
         } catch let jump as Jump {
@@ -302,6 +316,8 @@ enum AgentRecipeRunner {
                 index += 1
             } catch let jump as Jump {
                 guard let target = steps.firstIndex(where: { $0["id"] as? String == jump.id }) else { throw jump }
+                run.jumps += 1
+                guard run.jumps <= maxJumps else { throw AgentError.invalid("Stopped after \(maxJumps) jumps; a goto loops") }
                 index = target
             }
         }
@@ -311,17 +327,19 @@ enum AgentRecipeRunner {
         try Task.checkCancellation()
         if let task = run.task, task.isPausedForPerson || task.isFinished { throw AgentError.paused(task.title) }
         run.executed += 1
-        guard run.executed <= maxSteps else { throw AgentError.invalid("Stopped after \(maxSteps) steps; a goto may loop") }
+        guard run.executed <= maxSteps else { throw AgentError.invalid("Stopped after \(maxSteps) steps") }
         let label = Self.label(step, path: path)
         run.job.progress(path[0].index, of: run.recipe.steps.count, label)
 
         if let source = step["foreach"] as? String, let name = step["as"] as? String, let inner = step["steps"] as? [[String: Any]] {
             let list = try value(of: source, run: run)
             guard let items = list as? [Any] else { throw AgentError.invalid("\(label): foreach needs a list, got \(AgentExpression.text(list))") }
-            // Also when a goto leaves the loop.
+            // Put back what the name held before (a var, or an outer loop's item), also when a
+            // goto leaves the loop.
+            let (outerAlias, outerVar) = (run.aliases[name], run.actions.vars[name])
             defer {
-                run.aliases.removeValue(forKey: name)
-                run.actions.vars.removeValue(forKey: name)
+                run.aliases[name] = outerAlias
+                run.actions.vars[name] = outerVar
                 run.actions.scopes = run.scopes
             }
             for (i, item) in items.enumerated() {
@@ -368,8 +386,8 @@ enum AgentRecipeRunner {
         }
 
         let retry = (step["retry"] ?? run.recipe.defaults["retry"]) as? [String: Any]
-        let attempts = max(0, (retry?["times"] as? NSNumber)?.intValue ?? 0) + 1
-        let delay = ((retry?["delayMs"] as? NSNumber)?.doubleValue ?? 500) / 1000
+        let attempts = min(max(0, (retry?["times"] as? NSNumber)?.intValue ?? 0), 10) + 1
+        let delay = min(max(0, (retry?["delayMs"] as? NSNumber)?.doubleValue ?? 500), 60_000) / 1000
         var lastError: Error?
         for attempt in 1...attempts {
             do {
@@ -379,7 +397,7 @@ enum AgentRecipeRunner {
                     run.actions.scopes = run.scopes
                 }
                 return
-            } catch let error where !(error is CancellationError) && !Self.isPause(error) {
+            } catch let error where !Self.endsRun(error) {
                 lastError = error
                 if attempt < attempts { try await Task.sleep(for: .seconds(delay)) }
             }
@@ -417,26 +435,33 @@ enum AgentRecipeRunner {
         var runnable = step
         if runnable["timeout"] == nil, let timeout = run.recipe.defaults["timeout"] { runnable["timeout"] = timeout }
         let filled = AgentTemplate.fill(step, scopes: run.scopes) as? [String: Any] ?? step
-        if Self.targetsElement(filled), let wanted = filled["target"] as? String {
+        let pathKey = path.map { "\($0.index)\($0.branch)" }.joined(separator: "/")
+        if Self.targetsElement(filled), let healed = run.healedTargets[pathKey], (step["target"] as? String)?.contains("${") != true {
+            // Healed earlier in this run (a step in a loop): go straight to what worked.
+            runnable["target"] = healed
+        } else if Self.targetsElement(filled), let wanted = filled["target"] as? String {
             _ = try AgentHub.shared.browser?.agentWebView(item: run.item)
             // A step that says what to do when it fails does that instead of waiting for a repair.
             let failsOver = ((step["onFail"] ?? run.recipe.defaults["onFail"]) as? String ?? "abort") != "abort"
-            let target = try await findTarget(filled, index: path[0].index, job: run.job, webView: run.actions.webView,
-                                              mayPause: !failsOver)
+            let target = try await findTarget(filled, index: path[0].index, label: label, job: run.job,
+                                              webView: run.actions.webView, mayPause: !failsOver)
             if target != wanted {
                 runnable["target"] = target
                 // A templated target stays templated; a healed one is saved for next time.
                 if (step["target"] as? String)?.contains("${") != true {
                     Self.update(&run.recipe.steps, at: path, to: learned(step, target: target))
+                    run.healedTargets[pathKey] = target
                     run.healed = true
                 }
             }
         }
-        return try await perform(runnable, actions: run.actions, index: path[0].index, job: run.job, item: run.item)
+        return try await perform(runnable, actions: run.actions, label: label, job: run.job, item: run.item, index: path[0].index)
     }
 
-    /// A paused or ended task stops the run; retries and onFail do not apply.
-    private static func isPause(_ error: Error) -> Bool {
+    /// Errors no retry or onFail applies to: a cancelled run, a paused or ended task, a step the
+    /// person denied.
+    private static func endsRun(_ error: Error) -> Bool {
+        if error is CancellationError || error is Denied { return true }
         if case AgentError.paused = error { return true }
         return false
     }
@@ -484,28 +509,27 @@ enum AgentRecipeRunner {
 
     /// Runs a step; one that needs the person's approval waits for it (a run is a job, so it can).
     /// The page is hosted again right before each try: a long wait lets the idle timer park it.
-    private static func perform(_ step: [String: Any], actions: AgentActions, index: Int, job: AgentJob, item: UUID) async throws -> Any? {
+    private static func perform(_ step: [String: Any], actions: AgentActions, label: String, job: AgentJob, item: UUID,
+                                index: Int) async throws -> Any? {
         while true {
             _ = try AgentHub.shared.browser?.agentWebView(item: item)
             do {
                 return try await actions.perform(step)
             } catch AgentActions.StepError.needsApproval(let id, let reason) {
-                job.progress(index, of: nil, "Step \(index + 1) waits for your approval: \(reason)")
+                job.progress(index, of: nil, "\(label) waits for your approval: \(reason)")
                 job.pendingApproval = id
                 let decision = await AgentHub.shared.approvals.wait(id, timeout: 3600)
                 job.pendingApproval = nil
                 try Task.checkCancellation()
-                guard decision == .allowed else {
-                    throw AgentError.invalid("Step \(index + 1) was not approved")
-                }
+                guard decision == .allowed else { throw Denied(step: label) }
             } catch let error as AgentActions.StepError {
-                throw AgentError.invalid("Step \(index + 1) (\(step["action"] as? String ?? "")): \(error.agentMessage)")
+                throw AgentError.invalid("\(label): \(error.agentMessage)")
             }
         }
     }
 
     /// The step's target if it is on the page, else one that heals it, else waits for a repair.
-    private static func findTarget(_ step: [String: Any], index: Int, job: AgentJob, webView: WKWebView,
+    private static func findTarget(_ step: [String: Any], index: Int, label stepLabel: String, job: AgentJob, webView: WKWebView,
                                    mayPause: Bool = true) async throws -> String {
         let primary = step["target"] as? String ?? ""
         let candidates = [primary] + ((step["targets"] as? [String]) ?? []).filter { $0 != primary }
@@ -519,7 +543,7 @@ enum AgentRecipeRunner {
         if let byName = await healByName(label, in: webView) { return byName }
         if let picked = try await healOnDevice(step: step, label: label, in: webView) { return await durable(picked, in: webView) }
         guard mayPause else { throw AgentError.invalid("\(primary) is not on the page") }
-        let repaired = try await waitForRepair(step: step, index: index, tried: candidates, job: job, webView: webView)
+        let repaired = try await waitForRepair(step: step, index: index, at: stepLabel, tried: candidates, job: job, webView: webView)
         return await durable(repaired, in: webView)
     }
 
@@ -558,17 +582,18 @@ enum AgentRecipeRunner {
     }
 
     /// Pauses the run until an agent calls recipe_repair with a target, or the job is cancelled.
-    private static func waitForRepair(step: [String: Any], index: Int, tried: [String], job: AgentJob, webView: WKWebView) async throws -> String {
+    private static func waitForRepair(step: [String: Any], index: Int, at stepLabel: String, tried: [String], job: AgentJob,
+                                      webView: WKWebView) async throws -> String {
         let observed = try? await AgentRuntime.object("observe", ["limit": 80], in: webView)
         job.repair = [
-            "step": index + 1, "action": step["action"] as? String ?? "", "label": step["label"] as? String ?? "",
+            "step": index + 1, "at": stepLabel, "action": step["action"] as? String ?? "", "label": step["label"] as? String ?? "",
             "tried": tried, "url": webView.url?.absoluteString ?? "",
             "elements": AgentUntrusted.wrap(AgentJSON.compact(observed?["elements"] ?? []), origin: webView.url?.host)
         ]
         job.state = .needsRepair
         job.repairTarget = nil
         job.changed.fire()
-        AgentNotifier.runFinished(title: job.title, ok: false, detail: "Step \(index + 1) needs a new target")
+        AgentNotifier.runFinished(title: job.title, ok: false, detail: "Step \(stepLabel) needs a new target")
         while job.repairTarget == nil {
             try Task.checkCancellation()
             guard job.state == .needsRepair else { throw CancellationError() }

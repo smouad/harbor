@@ -42,16 +42,21 @@ enum AgentRuntime {
         try await call(op, args, in: webView) as? [String: Any] ?? [:]
     }
 
-    /// Whether a vault secret was typed into this document. Scripts can read any field, so they
-    /// wait until the page moves on, or until the person approves them in a task.
+    /// Whether this document holds a secret: a vault value typed into it, or any password field
+    /// with something in it (a password manager extension fills those without Harbor knowing the
+    /// value, so it cannot be scrubbed). Scripts can read any field, so they wait until the page
+    /// moves on, or until the person approves them in a task.
     static func secretTyped(in webView: WKWebView) async -> Bool {
-        let typed = try? await webView.callAsyncJavaScript(
-            "return typeof globalThis.__harborAgent === 'object' && await globalThis.__harborAgent.call('secretTyped', {})",
-            contentWorld: world)
+        let typed = try? await webView.callAsyncJavaScript("""
+            const filled = doc => [...doc.querySelectorAll("input[type=password]")].some(i => i.value)
+                || [...doc.querySelectorAll("iframe, frame")].some(f => { try { return !!f.contentDocument && filled(f.contentDocument); } catch { return false; } });
+            if (filled(document)) return true;
+            return typeof globalThis.__harborAgent === 'object' && await globalThis.__harborAgent.call('secretTyped', {});
+            """, contentWorld: world)
         return typed as? Bool ?? false
     }
 
-    static let secretScriptRefusal = "A vault secret was typed on this page, so scripts wait until the page changes. In a task, the person can approve them."
+    static let secretScriptRefusal = "A password is in a field on this page (typed from the vault or filled by a password manager), so scripts wait until the page changes. In a task, the person can approve them."
 }
 
 /// The runtime's errors arrive as WKError with the JavaScript message buried in userInfo.

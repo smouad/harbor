@@ -80,6 +80,9 @@ final class AgentActions {
         switch action {
         case "click":
             let count = (step["clickCount"] as? NSNumber)?.intValue ?? 1
+            // The pointer is over what it clicks, so :hover styles move there (a hover menu
+            // stays open while its item is clicked, and closes when something else is).
+            if let target { _ = try? await runtime("pointerAt", ["target": target]) }
             if native { try await nativeClick(target, step: step, clickCount: count) }
             else { _ = try await runtime("click", ["target": try need(target)]) }
             await settle()
@@ -409,18 +412,29 @@ enum AgentPageWait {
     }
 
     /// A page that says the browser is not supported is opened again presenting as Chrome, once,
-    /// and its site remembered (ChromeIdentity.learned), when the person allows it.
+    /// and its host remembered (ChromeIdentity.learned) if that got past the message, when the
+    /// person allows it. Only a short page counts: a results page or an article that mentions an
+    /// unsupported browser is not one turning Safari away.
     private static func presentAsChromeIfTurnedAway(_ webView: WKWebView, url: URL, deadline: Date) async -> Bool {
         guard let session = (webView as? SessionWebView)?.owningSession, session.isAgentPage,
               session.controller?.settings.agentPresentsAsChrome == true,
               session.userAgentOverride == nil, let host = webView.url?.host,
               !(webView.customUserAgent ?? "").contains("Chrome/"),
-              let text = try? await webView.callAsyncJavaScript(
-                  "return document.body ? document.body.innerText : ''", contentWorld: AgentRuntime.world) as? String,
-              ChromeIdentity.turnsBrowserAway(text) else { return true }
-        AgentHub.log.notice("\(host, privacy: .public) turned Safari away; presenting as Chrome there")
+              let text = await pageText(webView), text.count < 4000, ChromeIdentity.turnsBrowserAway(text) else { return true }
         ChromeIdentity.learn(host)
-        return await open(webView, url: url, timeout: max(1, deadline.timeIntervalSinceNow))
+        let opened = await open(webView, url: url, timeout: max(1, deadline.timeIntervalSinceNow))
+        if let again = await pageText(webView), ChromeIdentity.turnsBrowserAway(again) {
+            // Chrome did no better: the site minds something else.
+            ChromeIdentity.forget(host)
+        } else {
+            AgentHub.log.notice("\(host, privacy: .public) turned Safari away; presenting as Chrome there")
+        }
+        return opened
+    }
+
+    private static func pageText(_ webView: WKWebView) async -> String? {
+        try? await webView.callAsyncJavaScript("return document.body ? document.body.innerText : ''",
+                                               contentWorld: AgentRuntime.world) as? String
     }
 
     /// Until the URL contains `pattern`, or matches it when written `/regex/`.
@@ -471,31 +485,102 @@ enum AgentURLs {
               scheme == "http" || scheme == "https", url.host != nil else { return nil }
         return url
     }
+
+    /// The host a grant or a check is about, lowercased; "" for none.
+    static func site(of url: URL?) -> String {
+        url?.host?.lowercased() ?? ""
+    }
 }
 
 /// Stylesheets from another origin, for hover styles: the page loaded them, but its script cannot
-/// read their rules. Fetched without cookies, at most 2 MB each and 3 s for all.
+/// read their rules. Fetched without cookies, only from public hosts (never this Mac or the local
+/// network, whose answers would land in the page), only CSS, at most 2 MB each and 3 s in all.
 enum AgentHoverSheets {
     static func fetch(_ hrefs: [String], from page: URL?) async -> [String: String] {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3
+        config.timeoutIntervalForResource = 3
         config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
         let session = URLSession(configuration: config)
-        defer { session.finishTasksAndInvalidate() }
+        defer { session.invalidateAndCancel() }
+        // The page's origin only, as a browser sends to another site.
+        let referer = page.flatMap { url in url.host.map { "\(url.scheme ?? "https")://\($0)/" } }
         return await withTaskGroup(of: (String, String).self) { group in
             for href in hrefs {
                 group.addTask {
-                    guard let url = URL(string: href), url.scheme == "https" || url.scheme == "http" else { return (href, "") }
+                    guard let url = URL(string: href), url.scheme == "https" || url.scheme == "http",
+                          let host = url.host, await isPublic(host) else { return (href, "") }
                     var request = URLRequest(url: url)
-                    if let page { request.setValue(page.absoluteString, forHTTPHeaderField: "Referer") }
-                    guard let (data, response) = try? await session.data(for: request),
-                          (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 << 20 else { return (href, "") }
-                    return (href, String(decoding: data, as: UTF8.self))
+                    if let referer { request.setValue(referer, forHTTPHeaderField: "Referer") }
+                    return (href, await read(request, session: session))
                 }
             }
             var out: [String: String] = [:]
             for await (href, text) in group { out[href] = text }
             return out
         }
+    }
+
+    private static func read(_ request: URLRequest, session: URLSession) async -> String {
+        guard let (bytes, response) = try? await session.bytes(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("text/css"),
+              let finalHost = http.url?.host, await isPublic(finalHost) else { return "" }
+        var data = Data()
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > 2 << 20 { return "" }
+            }
+        } catch {
+            return ""
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Whether every address `host` resolves to is public: not loopback, link-local or private.
+    private static func isPublic(_ host: String) async -> Bool {
+        await Task.detached {
+            var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM, ai_protocol: 0,
+                                 ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+            var list: UnsafeMutablePointer<addrinfo>?
+            guard getaddrinfo(host, nil, &hints, &list) == 0, let first = list else { return false }
+            defer { freeaddrinfo(list) }
+            var node: UnsafeMutablePointer<addrinfo>? = first
+            while let entry = node {
+                if let address = entry.pointee.ai_addr, !publicAddress(address) { return false }
+                node = entry.pointee.ai_next
+            }
+            return true
+        }.value
+    }
+
+    private static func publicAddress(_ address: UnsafeMutablePointer<sockaddr>) -> Bool {
+        if address.pointee.sa_family == sa_family_t(AF_INET) {
+            let v4 = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt32(bigEndian: $0.pointee.sin_addr.s_addr) }
+            let a = v4 >> 24, b = (v4 >> 16) & 0xff
+            #if DEBUG
+            // agent_e2e.py serves its cross-origin stylesheet from 127.0.0.1; Release never fetches it.
+            if a == 127 { return true }
+            #endif
+            return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b))
+                     || (a == 192 && b == 168) || (a == 100 && (64...127).contains(b)) || a >= 224)
+        }
+        if address.pointee.sa_family == sa_family_t(AF_INET6) {
+            let bytes = address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { pointer in
+                withUnsafeBytes(of: pointer.pointee.sin6_addr) { Array($0) }
+            }
+            let loopback = bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+            let linkLocal = bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80
+            let uniqueLocal = (bytes[0] & 0xfe) == 0xfc
+            let mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+            if mapped {
+                let a = bytes[12], b = bytes[13]
+                return !(a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168))
+            }
+            return !(loopback || linkLocal || uniqueLocal || bytes.allSatisfy { $0 == 0 })
+        }
+        return false
     }
 }

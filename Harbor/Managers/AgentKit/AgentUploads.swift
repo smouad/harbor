@@ -19,7 +19,13 @@ enum AgentUploads {
     /// A drop hands the page the bytes through script, so it stays small.
     static let maxDropBytes = 25 << 20
 
-    /// The file `path` names, or why it may not be uploaded.
+    /// Whether `url` is outside the Browser Control folder, so uploading it needs the person's OK.
+    static func isOutsideRoot(_ url: URL) -> Bool {
+        let root = DevMCPFiles.root.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        return !url.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(root)
+    }
+
+    /// The file `path` names, or why it may not be uploaded. The copy checks again on the opened file.
     static func source(_ path: String) throws -> URL {
         if !path.hasPrefix("/"), !path.hasPrefix("~") {
             guard let url = DevMCPFiles.resolve(path) else {
@@ -38,7 +44,7 @@ enum AgentUploads {
     @MainActor
     static func stage(_ sources: [URL]) async throws -> [URL] {
         do {
-            return try await AgentDeadline.throwing(20) {
+            return try await AgentDeadline.throwing(60) {
                 try await Task.detached(priority: .userInitiated) { try copy(sources) }.value
             }
         } catch is AgentDeadline.Expired {
@@ -51,15 +57,33 @@ enum AgentUploads {
         prune()
         let batch = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         return try sources.enumerated().map { index, source in
-            var isDirectory: ObjCBool = false
-            guard fm.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            // Open first, then judge the path the kernel has for the open file and copy from that
+            // same descriptor: a path prefix or a link swapped in after the check changes nothing.
+            let fd = open(source.path, O_RDONLY)
+            guard fd >= 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
+            defer { close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
                 throw AgentError.invalid("\(source.path) is not a file")
+            }
+            var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+            guard fcntl(fd, F_GETPATH, &buffer) == 0 else { throw AgentError.invalid("\(source.path) cannot be read") }
+            let real = String(cString: buffer)
+            if let why = AgentUploadPaths.refusal(real, home: NSHomeDirectory()) {
+                throw AgentError.invalid("Harbor does not upload \(source.path): \(why)")
             }
             // One folder per file keeps two files of the same name apart.
             let into = batch.appendingPathComponent(String(index), isDirectory: true)
             try fm.createDirectory(at: into, withIntermediateDirectories: true)
-            let copy = into.appendingPathComponent(source.lastPathComponent)
-            try fm.copyItem(at: source, to: copy)
+            let copy = into.appendingPathComponent(URL(fileURLWithPath: real).lastPathComponent)
+            guard fm.createFile(atPath: copy.path, contents: nil), let out = FileHandle(forWritingAtPath: copy.path) else {
+                throw AgentError.invalid("Could not stage \(source.lastPathComponent)")
+            }
+            defer { try? out.close() }
+            let input = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+            while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
+                try out.write(contentsOf: chunk)
+            }
             return copy
         }
     }

@@ -248,6 +248,19 @@ def shadow_dom_is_read_and_driven():
 
 
 @test
+def scripts_wait_while_a_password_is_filled():
+    # As a password manager extension would: a value Harbor did not type and cannot scrub.
+    open_page("form.html")
+    page("document.querySelector('#pw').value = 'hunter2'; return true")
+    refused = call("evaluate", {"code": "return document.querySelector('#pw').value"}, expect_error=True)
+    assert "password" in refused.lower() and "hunter2" not in refused, refused
+    acted = call("act", {"actions": [{"action": "eval", "code": "return 1"}]}, expect_error=True)
+    assert "password" in acted.lower(), acted
+    open_page("article.html")
+    assert page("return 1") == 1, "a new page lets scripts run again"
+
+
+@test
 def native_clicks_are_trusted():
     open_page("form.html")
     ref = next(e["ref"] for e in call("observe")["elements"] if e["name"] == "Save draft")
@@ -352,16 +365,18 @@ def upload_uses_the_page_picker():
     call("upload", {"target": "input[type=file]", "files": ["../../etc/hosts"]}, expect_error=True)
     no_input = call("upload", {"target": "#save", "files": ["uploads/a.txt"]}, expect_error=True)
     assert "did not take files dropped" in no_input, no_input
-    # Any path the person has, but not where keys and sign-ins live.
+    # Any other path the person has waits for their OK, naming the file and the site.
     outside = os.path.join("/tmp", f"harbor-e2e-{os.getpid()}.txt")
     with open(outside, "w") as f:
         f.write("from tmp")
     try:
-        result = call("upload", {"target": "input[type=file]", "files": [outside]})
-        assert page("return window.files") == [os.path.basename(outside) + ":8"], page("return window.files")
+        held = call("upload", {"target": "input[type=file]", "files": [outside]})
+        assert held.get("needs_approval") and outside in held["action"] and "127.0.0.1" in held["action"], held
     finally:
         os.remove(outside)
-    for refused in ["~/.ssh/id_ed25519", "~/Library/Keychains/login.keychain-db", "/etc/hosts"]:
+    # Never where keys and sign-ins live, however the path is written.
+    for refused in ["~/.ssh/id_ed25519", "~/Library/Keychains/login.keychain-db", "/etc/hosts",
+                    f"/.nofollow{os.path.expanduser('~')}/.zshrc", "~/Projects/app/.env"]:
         text = call("upload", {"target": "input[type=file]", "files": [refused]}, expect_error=True)
         assert "does not upload" in text, text
 
@@ -547,6 +562,9 @@ function spin() { while (true) {} }
 """
     steps = [
         {"action": "navigate", "url": f"{BASE}/recipe.html"},
+        # Inputs reach the very first steps, before any set or loop.
+        {"action": "fill", "target": "#title", "text": "${input.first}"},
+        {"action": "getValue", "target": "#title", "as": "firstValue"},
         {"action": "set", "var": "added", "value": []},
         {"foreach": "${vars.items}", "as": "item", "steps": [
             {"when": "item.skip", "steps": [{"action": "log", "message": "skip ${item.name}"}], "else": [
@@ -565,12 +583,13 @@ function spin() { while (true) {} }
         {"action": "log", "message": "never logged"},
         {"id": "end", "action": "snapshot", "as": "seen"},
     ]
-    call("recipe_save", {"recipe": {"name": "e2e-flow", "hooks": hooks, "vars": {"items": [
+    call("recipe_save", {"recipe": {"name": "e2e-flow", "hooks": hooks, "vars": {"first": "start", "items": [
         {"name": "milk"}, {"name": "eggs", "skip": True}, {"name": "tea"}]}, "steps": steps}})
     run = wait_job(call("recipe_run", {"name": "e2e-flow"})["job"])
     assert run["state"] == "done", run
     result = run["result"]
     assert result["vars"]["added"] == ["MILK", "TEA"], result["vars"]
+    assert result["vars"]["firstValue"] == "start", result["vars"]
     assert result["vars"]["total"] == 2 and result["vars"]["rounds"] == 3 and result["vars"]["count"] == 2, result["vars"]
     assert "skip eggs" in result["log"] and "never logged" not in result["log"], result["log"]
     assert [f["step"].split(". ")[1] for f in result["failed"]] == ["click"], result["failed"]

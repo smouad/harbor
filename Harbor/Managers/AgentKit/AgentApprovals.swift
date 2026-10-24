@@ -100,18 +100,25 @@ final class AgentApprovals {
         return .needsApproval(request)
     }
 
-    /// Whether an agent may work in one of the person's tabs under the "ask" setting: once they
-    /// allow a tab it stays allowed while Harbor runs.
-    func tabAccess(item: UUID, title: String, host: String) -> Gate {
-        let fingerprint = "tab|\(item.uuidString)"
-        if let grant = granted[fingerprint], grant.until > Date() { return .allowed }
+    /// Approvals outside any task, for what reaches past the Agent space. `tab|<id>|<site>`: work in
+    /// one of the person's tabs while it stays on that site; `tabs`: see their tabs' titles and
+    /// addresses. Both last until quit. `upload|…`: one upload of files from outside the Browser
+    /// Control folder, used once.
+    func personGate(fingerprint: String, about: String, reason: String, action: String) -> Gate {
+        if let grant = granted[fingerprint], grant.until > Date() {
+            if grant.singleUse { granted.removeValue(forKey: fingerprint) }
+            return .allowed
+        }
         if let existing = pending.first(where: { $0.fingerprint == fingerprint }) { return .needsApproval(existing) }
-        let request = Request(id: AgentID.make("a"), taskID: "", taskTitle: "Your tab", reason: "Works in one of your own tabs",
-                              action: "Use your tab \"\(title.prefix(60))\"" + (host.isEmpty ? "" : " on \(host)"), fingerprint: fingerprint)
+        let request = Request(id: AgentID.make("a"), taskID: "", taskTitle: about, reason: reason, action: action, fingerprint: fingerprint)
         pending.append(request)
         AgentNotifier.approvalNeeded(request)
         changed.fire()
         return .needsApproval(request)
+    }
+
+    private static func lastsUntilQuit(_ fingerprint: String) -> Bool {
+        fingerprint.hasPrefix("tab|") || fingerprint == "tabs"
     }
 
     private static func refusal(_ task: AgentTask) -> String? {
@@ -127,9 +134,10 @@ final class AgentApprovals {
         decidedOrder.append(id)
         if decidedOrder.count > 200 { decided.removeValue(forKey: decidedOrder.removeFirst()) }
         if allow {
-            let tab = request.fingerprint.hasPrefix("tab|")
-            let grant = Grant(until: tab ? .distantFuture : Date().addingTimeInterval(Self.grantLifetime),
-                              singleUse: !tab && AgentSensitivity.isSingleUse(request.reason))
+            let lasting = Self.lastsUntilQuit(request.fingerprint)
+            let grant = Grant(until: lasting ? .distantFuture : Date().addingTimeInterval(Self.grantLifetime),
+                              singleUse: request.fingerprint.hasPrefix("upload|")
+                                  || (!lasting && AgentSensitivity.isSingleUse(request.reason)))
             granted[request.fingerprint] = grant
         }
         AgentNotifier.withdraw(request.id)

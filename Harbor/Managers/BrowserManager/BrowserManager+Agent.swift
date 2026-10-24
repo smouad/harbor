@@ -59,7 +59,8 @@ extension BrowserManager {
     /// Starts recording a recipe from the person's use of the active window's tab; the recording
     /// card names it and saves it.
     func recordRecipeInCurrentTab() {
-        guard let session = tabs.activeWindowSession, let webView = session.webView else { return }
+        // A private window's pages stay out of saved recipes.
+        guard let session = tabs.activeWindowSession, !session.isPrivate, let webView = session.webView else { return }
         Task { @MainActor in
             do {
                 try await AgentHub.shared.recorder.start(in: webView, subject: session.title)
@@ -80,7 +81,8 @@ extension BrowserManager {
         guard let view = session.webView else { throw AgentPageError.noPage }
         compositorManager.markTabAccessed(id)
         agentParked.remove(id)
-        if view.window == nil {
+        if view.window == nil || view.superview is AgentPageHostView {
+            // In the hidden host (or going there): each use keeps it there another while.
             agentLastUse[id] = Date()
             placeInHiddenHost(session)
             scheduleAgentIdle()

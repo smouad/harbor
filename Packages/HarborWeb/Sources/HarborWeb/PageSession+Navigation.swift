@@ -327,14 +327,19 @@ extension PageSession: WKNavigationDelegate {
 
         // Present as Chrome or Safari to this site (ChromeIdentity). The request already carries
         // the old user agent, so a plain load starts again with the new one; a POST or a history
-        // step goes ahead and the page's scripts see the new one.
+        // step goes ahead and the page's scripts see the new one. Not for an Option-click (Peek
+        // takes it) or a download. Each URL starts again once at most, so a redirect between a
+        // Chrome site and a Safari one cannot bounce forever.
         if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url,
-           url.scheme == "http" || url.scheme == "https" {
+           url.scheme == "http" || url.scheme == "https", !navigationAction.shouldPerformDownload,
+           !(navigationAction.navigationType == .linkActivated && isOptionKeyDown && !isDetached) {
             let wanted = wantedUserAgent(for: url)
             // WebKit reads back "" for no custom agent; comparing raw would reload forever.
             if (webView.customUserAgent ?? "") != (wanted ?? "") {
                 webView.customUserAgent = wanted
-                if (navigationAction.request.httpMethod ?? "GET") == "GET", navigationAction.navigationType != .backForward {
+                if (navigationAction.request.httpMethod ?? "GET") == "GET", navigationAction.navigationType != .backForward,
+                   !userAgentRestarts.contains(url) {
+                    userAgentRestarts = Array((userAgentRestarts + [url]).suffix(8))
                     var request = navigationAction.request
                     request.setValue(nil, forHTTPHeaderField: "User-Agent")
                     decisionHandler(.cancel)

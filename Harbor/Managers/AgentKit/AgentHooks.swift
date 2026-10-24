@@ -20,10 +20,25 @@ enum AgentHooks {
 
     private static let seconds = 5.0
 
-    /// Throws when `source` does not parse.
+    /// Throws when `source` does not parse. Parses only: nothing in it runs, so a saved recipe
+    /// cannot hold the app at save or at launch.
     static func check(_ source: String) throws {
-        let context = try makeContext(source)
-        _ = context
+        guard let context = JSGlobalContextCreate(nil) else { throw Failure(message: "JavaScriptCore is unavailable") }
+        defer { JSGlobalContextRelease(context) }
+        let script = JSStringCreateWithCFString(stripExports(source) as CFString)
+        defer { JSStringRelease(script) }
+        var exception: JSValueRef?
+        guard JSCheckScriptSyntax(context, script, nil, 1, &exception) else {
+            let message = exception.flatMap { JSValueToStringCopy(context, $0, nil) }.map { text -> String in
+                defer { JSStringRelease(text) }
+                return JSStringCopyCFString(nil, text) as String
+            }
+            throw Failure(message: "The recipe's hooks do not run: \(message ?? "syntax error")")
+        }
+    }
+
+    private nonisolated static func stripExports(_ source: String) -> String {
+        source.replacingOccurrences(of: #"(?m)^(\s*)export\s+(default\s+)?"#, with: "$1", options: .regularExpression)
     }
 
     /// The value the hook returns (a promise is awaited), as JSON-like Foundation values.
@@ -47,7 +62,10 @@ enum AgentHooks {
         context.evaluateScript("""
             globalThis.__harborOut = undefined;
             Promise.resolve().then(() => \(hook)(__harborArgs)).then(
-                v => { __harborOut = { ok: true, value: v === undefined ? null : JSON.parse(JSON.stringify(v)) }; },
+                v => {
+                    try { __harborOut = { ok: true, value: v === undefined ? null : JSON.parse(JSON.stringify(v)) }; }
+                    catch (e) { __harborOut = { ok: false, error: "returned a value that is not JSON: " + e.message }; }
+                },
                 e => { __harborOut = { ok: false, error: String((e && e.message) || e) }; });
             """)
         if let exception = context.exception {
@@ -64,8 +82,7 @@ enum AgentHooks {
     private nonisolated static func makeContext(_ source: String) throws -> JSContext {
         guard let context = JSContext() else { throw Failure(message: "JavaScriptCore is unavailable") }
         limitTime(context)
-        let script = source.replacingOccurrences(of: #"(?m)^(\s*)export\s+(default\s+)?"#, with: "$1", options: .regularExpression)
-        context.evaluateScript(script)
+        context.evaluateScript(stripExports(source))
         if let exception = context.exception {
             throw Failure(message: "The recipe's hooks do not run: \(exception.toString() ?? "syntax error")")
         }

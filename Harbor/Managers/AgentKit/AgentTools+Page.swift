@@ -185,7 +185,7 @@ extension AgentToolbox {
 
     private static let upload = AgentTool(
         "upload",
-        "Put files into a file input as if the person picked them, through the page's own picker so change events and validation run as for a person. A target with no file input in it (a drop zone) gets the files dropped on it instead, at most 25 MB. files are absolute paths (or ~/…), or paths relative to ~/Downloads/Harbor MCP; hidden files in the home folder, ~/Library (except iCloud Drive and cloud storage) and system files are refused.",
+        "Put files into a file input as if the person picked them, through the page's own picker so change events and validation run as for a person. A target with no file input in it (a drop zone) gets the files dropped on it instead, at most 25 MB. files are paths relative to ~/Downloads/Harbor MCP, or absolute paths (or ~/…), which wait for the person's OK each time (approval_wait); hidden files and folders, ~/Library (except iCloud Drive and cloud storage) and system files are refused.",
         properties: [
             "target": ["type": "string", "description": "The file input, a ref or selector; an element containing one; or a drop zone"],
             "files": ["type": "array", "items": ["type": "string"]]
@@ -198,7 +198,21 @@ extension AgentToolbox {
         guard !files.isEmpty, let item = call.session?.itemID else { throw AgentError.invalid("files is empty") }
         // No file input: the target is a drop zone.
         let ref = (try? await AgentRuntime.object("fileInput", ["target": target], in: webView))?["ref"] as? String
-        if let task = call.task, task.confirm != .never {
+        let host = AgentURLs.site(of: webView.url)
+        let outside = files.filter(AgentUploads.isOutsideRoot)
+        if !outside.isEmpty {
+            // A file from anywhere else goes to a page only once the person sees which and where.
+            let paths = outside.map(\.path)
+            switch AgentHub.shared.approvals.personGate(
+                fingerprint: "upload|\(host)|" + paths.joined(separator: "|"), about: call.task?.title ?? "Upload",
+                reason: "Uploads your files to \(host.isEmpty ? "the page" : host)",
+                action: "Upload \(paths.joined(separator: ", ")) to \(host.isEmpty ? "the page" : host)") {
+            case .allowed: break
+            case .needsApproval(let request):
+                return .json(["ok": false, "needs_approval": request.id, "reason": request.reason, "action": request.action])
+            case .refused(let why): throw AgentError.invalid(why)
+            }
+        } else if let task = call.task, task.confirm != .never {
             var facts = AgentActionFacts(action: "upload")
             facts.host = webView.url?.host ?? ""
             facts.text = files.map(\.lastPathComponent).joined(separator: ", ")

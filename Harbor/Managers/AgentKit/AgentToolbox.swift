@@ -302,10 +302,18 @@ enum AgentToolbox {
         guard tabs.item(item) != nil, !tabs.isInAgentSpace(item) else {
             throw AgentError.invalid("No such tab of the person's (Agent space tabs are used without tab)")
         }
+        // A private window's tab, or a task's tab the person dragged out of the Agent space, is not
+        // the agent's to drive.
+        if tabs.isPrivateItem(item) { throw AgentError.invalid("Agents do not use private windows' tabs") }
+        if let refusal = taskTabRefusal(item: item) { throw AgentError.invalid(refusal) }
         guard access == .ask else { return .ready(item) }
         let session = tabs.session(for: item)
         let title = session?.title ?? tabs.item(item)?.displayTitle ?? ""
-        switch AgentHub.shared.approvals.tabAccess(item: item, title: title, host: session?.url.host ?? "") {
+        let site = AgentURLs.site(of: session?.url)
+        // Allowed for this tab while it stays on this site: navigating elsewhere asks again.
+        switch AgentHub.shared.approvals.personGate(
+            fingerprint: "tab|\(item.uuidString)|\(site)", about: "Your tab", reason: "Works in one of your own tabs",
+            action: "Use your tab on \(site.isEmpty ? "this page" : site) (\"\(title.prefix(60))\")") {
         case .allowed: return .ready(item)
         case .needsApproval(let request): return .needsApproval(request)
         case .refused(let why): throw AgentError.invalid(why)

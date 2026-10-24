@@ -66,6 +66,8 @@ struct AgentPolicyCheck {
         precondition((try? AgentExpression.evaluate("vars.count +", scopes: scopes)) == nil)
         precondition((try? AgentExpression.evaluate("alert(1)", scopes: scopes)) == nil, "no calls")
         precondition((try? AgentExpression.evaluate("vars.count = 4", scopes: scopes)) == nil, "no assignment")
+        precondition((try? AgentExpression.evaluate(String(repeating: "(", count: 500) + "1" + String(repeating: ")", count: 500), scopes: scopes)) == nil, "deep nesting is refused, not a stack overflow")
+        precondition((try? AgentExpression.evaluate(String(repeating: "!", count: 900) + "true", scopes: scopes)) == nil)
     }
 
     static func uploadPaths() {
@@ -76,7 +78,10 @@ struct AgentPolicyCheck {
         precondition(ok("/private/tmp/x.txt"), "temporary files are fine")
         precondition(ok("/Users/p/Library/Mobile Documents/com~apple~CloudDocs/x.pdf"), "iCloud Drive is the person's files")
         precondition(ok("/Users/p/Library/CloudStorage/Dropbox/x.pdf"))
-        precondition(ok("/Users/p/Projects/.env.example"), "a dotfile deeper down is only refused at the top")
+        precondition(!ok("/Users/p/Projects/app/.env"), "hidden files anywhere")
+        precondition(!ok("/Users/p/Projects/app/.git/config"))
+        precondition(!ok("/.nofollow/Users/p/.ssh/id_ed25519"), "the /.nofollow prefix skips symlink resolution")
+        precondition(!ok("/.resolve/1/Users/p/Documents/a.pdf"))
         precondition(!ok("/Users/p/.ssh/id_ed25519"))
         precondition(!ok("/Users/p/.zsh_history"))
         precondition(!ok("/Users/p/.aws/credentials"))

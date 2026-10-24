@@ -21,6 +21,7 @@ enum AgentExpression {
 
     /// The value of `expression` against `scopes`; NSNull for null.
     static func evaluate(_ expression: String, scopes: [String: Any]) throws -> Any {
+        guard expression.count <= 2000 else { throw Failure(message: "An expression is at most 2000 characters") }
         var parser = Parser(tokens: try tokenize(expression), scopes: scopes, source: expression)
         let value = try parser.or()
         guard parser.index == parser.tokens.count else { throw Failure(message: "Unexpected text after the expression: \(expression)") }
@@ -131,6 +132,8 @@ enum AgentExpression {
         let scopes: [String: Any]
         let source: String
         var index = 0
+        /// Nesting so far: parentheses and ! or - in a row recurse, and the stack is not endless.
+        var depth = 0
 
         init(tokens: [Token], scopes: [String: Any], source: String) {
             self.tokens = tokens
@@ -206,6 +209,9 @@ enum AgentExpression {
         }
 
         mutating func primary() throws -> Any {
+            depth += 1
+            defer { depth -= 1 }
+            guard depth <= 64 else { throw Failure(message: "The expression nests too deep") }
             guard index < tokens.count else { throw Failure(message: "The expression ends early: \(source)") }
             let token = tokens[index]
             index += 1

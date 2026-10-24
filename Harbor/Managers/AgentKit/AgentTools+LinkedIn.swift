@@ -26,7 +26,9 @@ extension AgentToolbox {
         let pages = min(max(call.args.int("pages") ?? 1, 1), 3)
         try AgentLinkedIn.usage.claim(.search)
         let job = AgentHub.shared.jobs.start(kind: "linkedin_search", title: "LinkedIn: \(query)") { job in
-            ["hits": try await AgentLinkedIn.search(query, pages: pages, job: job, browser: call.browser)]
+            try await AgentLinkedIn.oneAtATime {
+                ["hits": try await AgentLinkedIn.search(query, pages: pages, job: job, browser: call.browser)]
+            }
         }
         await AgentHub.shared.jobs.wait(job, timeout: min(20, call.remaining - 2))
         return .job(job)
@@ -44,7 +46,9 @@ extension AgentToolbox {
         if byName { try AgentLinkedIn.usage.claim(.search) }
         try AgentLinkedIn.usage.claim(.profile)
         let job = AgentHub.shared.jobs.start(kind: "linkedin_profile", title: "LinkedIn: \(target)") { job in
-            try await AgentLinkedIn.profile(target, job: job, browser: call.browser)
+            try await AgentLinkedIn.oneAtATime {
+                try await AgentLinkedIn.profile(target, job: job, browser: call.browser)
+            }
         }
         await AgentHub.shared.jobs.wait(job, timeout: min(20, call.remaining - 2))
         return .job(job)
@@ -65,6 +69,22 @@ enum AgentLinkedIn {
 
     /// The Agent space tab LinkedIn work happens in, kept between calls.
     private static var tab: UUID?
+    /// The latest LinkedIn job: each waits for the one before, since they share the tab.
+    private static var queue: Task<Void, Never>?
+
+    static func oneAtATime<T>(_ work: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = queue
+        let mine = Task { @MainActor in
+            await previous?.value
+            return try await work()
+        }
+        queue = Task { @MainActor in _ = try? await mine.value }
+        return try await withTaskCancellationHandler {
+            try await mine.value
+        } onCancel: {
+            mine.cancel()
+        }
+    }
 
     static func search(_ query: String, pages: Int, job: AgentJob, browser: BrowserManager) async throws -> [[String: Any]] {
         var hits: [[String: Any]] = []

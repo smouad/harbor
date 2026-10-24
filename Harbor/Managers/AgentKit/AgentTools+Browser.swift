@@ -16,12 +16,22 @@ extension AgentToolbox {
 
     private static let personTabs = AgentTool(
         "tabs",
-        "The person's own tabs, by window: id, title, url, and which one is current. Pass an id (or \"current\") as tab to a page tool to work there. Only when the person allows it in Settings > Developer; under Ask, the first use of each tab waits for their OK (approval_wait).",
+        "The person's own tabs, by window: id, title, url, and which one is current. Pass an id (or \"current\") as tab to a page tool to work there. Only when the person allows it in Settings > Developer; under Ask, the first listing and each tab's first use on a site wait for their OK (approval_wait).",
         page: .none
     ) { call in
         let tabs = call.browser.tabs
         guard tabs.settings.agentTabAccess != .off else {
             throw AgentError.invalid("The person has not let agents use their tabs (Settings > Developer)")
+        }
+        // Titles and addresses can carry mail subjects or reset links, so under Ask listing asks too.
+        if tabs.settings.agentTabAccess == .ask {
+            switch AgentHub.shared.approvals.personGate(fingerprint: "tabs", about: "Your tabs", reason: "Reads your tabs' titles and addresses",
+                                                        action: "See the titles and addresses of your open tabs") {
+            case .allowed: break
+            case .needsApproval(let request):
+                return .json(["ok": false, "needs_approval": request.id, "reason": request.reason, "action": request.action])
+            case .refused(let why): throw AgentError.invalid(why)
+            }
         }
         let windows = tabs.regularWindows.enumerated().compactMap { index, window -> [String: Any]? in
             // A window showing the Agent space shows no tabs of the person's.
@@ -50,6 +60,8 @@ extension AgentToolbox {
         required: ["as"]
     ) { call in
         guard let session = call.session, let webView = call.webView else { throw AgentError.noPage }
+        // The person's own tab keeps the identity they chose for it.
+        guard session.isAgentPage else { throw AgentError.invalid("identity works on Agent space tabs only") }
         switch try call.args.required("as") {
         case "chrome": session.userAgentOverride = ChromeIdentity.userAgent
         case "safari": session.userAgentOverride = PlatformUserAgent.custom

@@ -30,10 +30,16 @@ public enum ChromeIdentity {
     public private(set) static var learned: [String] = UserDefaults.standard.stringArray(forKey: learnedKey) ?? []
     private static let learnedKey = "HarborAgentChromeSites"
 
+    /// Remembers the exact host (not its parent domain), newest last, at most 200.
     public static func learn(_ host: String) {
-        let site = host.lowercased().hasPrefix("www.") ? String(host.lowercased().dropFirst(4)) : host.lowercased()
-        guard !site.isEmpty, !matches(host: site, sites: learned) else { return }
-        learned.append(site)
+        let site = host.lowercased()
+        guard !site.isEmpty, !learned.contains(site) else { return }
+        learned = Array((learned + [site]).suffix(200))
+        UserDefaults.standard.set(learned, forKey: learnedKey)
+    }
+
+    public static func forget(_ host: String) {
+        learned.removeAll { $0 == host.lowercased() }
         UserDefaults.standard.set(learned, forKey: learnedKey)
     }
 
@@ -110,7 +116,7 @@ extension PageSession {
     func wantedUserAgent(for url: URL) -> String? {
         if let userAgentOverride { return userAgentOverride }
         guard let settings = controller?.settings else { return PlatformUserAgent.custom }
-        if isAgentPage, settings.agentPresentsAsChrome, ChromeIdentity.matches(host: url.host, sites: ChromeIdentity.learned) {
+        if isAgentPage, settings.agentPresentsAsChrome, let host = url.host?.lowercased(), ChromeIdentity.learned.contains(host) {
             return ChromeIdentity.userAgent
         }
         if ChromeIdentity.matches(host: url.host, sites: settings.chromeIdentitySites) { return ChromeIdentity.userAgent }

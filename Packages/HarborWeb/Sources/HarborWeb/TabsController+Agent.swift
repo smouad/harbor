@@ -64,3 +64,11 @@ extension PageSession {
     /// A page in the Agent space: it opens no window, sheet or panel and records no history.
     public var isAgentPage: Bool { controller?.isInAgentSpace(itemID) == true }
 }
+
+extension TabsController {
+    /// Whether `id` is in a private window's tree.
+    public func isPrivateItem(_ id: UUID) -> Bool {
+        if case .privateWindow = owner(ofItem: id) { return true }
+        return false
+    }
+}

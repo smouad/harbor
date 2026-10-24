@@ -254,10 +254,12 @@
         const px = r.left + offset.x + r.width / 2;
         const py = r.top + offset.y + r.height / 2;
         let top = document.elementFromPoint(px, py);
-        // Descend into same-origin frames and open shadow roots to find what is really there.
+        // Descend into same-origin frames and open shadow roots to find what is really there, in
+        // each frame's own coordinates.
+        let lx = px, ly = py;
         for (let depth = 0; top && depth < 16; depth++) {
             if (top.shadowRoot) {
-                const inner = top.shadowRoot.elementFromPoint(px, py);
+                const inner = top.shadowRoot.elementFromPoint(lx, ly);
                 if (!inner || inner === top) break;
                 top = inner;
             } else if (top.tagName === "IFRAME" || top.tagName === "FRAME") {
@@ -265,7 +267,9 @@
                 try { doc = top.contentDocument; } catch { doc = null; }
                 if (!doc) break;
                 const fr = top.getBoundingClientRect();
-                top = doc.elementFromPoint(px - fr.left - top.clientLeft, py - fr.top - top.clientTop);
+                lx -= fr.left + top.clientLeft;
+                ly -= fr.top + top.clientTop;
+                top = doc.elementFromPoint(lx, ly);
             } else {
                 break;
             }
@@ -379,9 +383,13 @@
             if (rule instanceof CSSImportRule) {
                 if (rule.styleSheet) sheetHoverRules(rule.styleSheet, out, missing, rule.media?.mediaText);
             } else if (rule instanceof CSSStyleRule) {
-                if (rule.selectorText.includes(":hover")) {
-                    out.push(rule.cssText.replace(/:hover\b/g, `[${HOVER_ATTR}]`));
-                } else if (rule.cssRules?.length) {
+                // Only the selectors in a list that hover: `.btn, .btn:hover {…}` copied whole would
+                // restyle every .btn, last in the cascade.
+                const hovering = splitSelectors(rule.selectorText).filter(sel => sel.includes(":hover"));
+                if (hovering.length && rule.style.cssText) {
+                    out.push(`${hovering.map(sel => sel.replace(/:hover\b/g, `[${HOVER_ATTR}]`)).join(", ")} { ${rule.style.cssText} }`);
+                }
+                if (rule.cssRules?.length) {
                     // CSS nesting: a parent rule whose children hover.
                     const inner = [];
                     hoverRules(rule.cssRules, inner, missing);
@@ -394,6 +402,22 @@
                 if (inner.length) out.push(`${rule.cssText.slice(0, rule.cssText.indexOf("{"))} { ${inner.join("\n")} }`);
             }
         }
+    }
+
+    // A selector list split at its top-level commas (not those inside :is(), :not() or [attr]).
+    function splitSelectors(text) {
+        const parts = [];
+        let depth = 0, start = 0, quote = null;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (quote) { if (c === quote && text[i - 1] !== "\\") quote = null; continue; }
+            if (c === '"' || c === "'") quote = c;
+            else if (c === "(" || c === "[") depth++;
+            else if (c === ")" || c === "]") depth--;
+            else if (c === "," && depth === 0) { parts.push(text.slice(start, i).trim()); start = i + 1; }
+        }
+        parts.push(text.slice(start).trim());
+        return parts.filter(Boolean);
     }
 
     function sheetHoverRules(sheet, out, missing, media) {
@@ -412,14 +436,25 @@
         out.push(media ? `@media ${media} { ${inner.join("\n")} }` : inner.join("\n"));
     }
 
+    // The copied rules, rebuilt only when the page's stylesheets or the fetched ones change.
+    let hoverCache = { key: "", text: "", missing: [] };
+
+    function hoverStyleText() {
+        const sheets = [...document.styleSheets, ...(document.adoptedStyleSheets || [])]
+            .filter(sheet => sheet.ownerNode?.dataset?.harborHoverStyles === undefined);
+        const key = sheets.map(sheet => { try { return `${sheet.href}:${sheet.cssRules.length}`; } catch { return `${sheet.href}:x`; } })
+            .join("|") + `#${fetchedSheets.size}`;
+        if (key === hoverCache.key) return hoverCache;
+        const out = [], missing = [];
+        for (const sheet of sheets) sheetHoverRules(sheet, out, missing);
+        hoverCache = { key, text: out.join("\n"), missing };
+        return hoverCache;
+    }
+
     /** Marks `el` and its ancestors hovered; returns stylesheets Harbor should fetch first. */
     function applyHoverStyles(el) {
         for (const old of document.querySelectorAll(`[${HOVER_ATTR}]`)) old.removeAttribute(HOVER_ATTR);
-        const out = [], missing = [];
-        for (const sheet of [...document.styleSheets, ...(document.adoptedStyleSheets || [])]) {
-            if (sheet.ownerNode?.dataset?.harborHoverStyles !== undefined) continue;
-            sheetHoverRules(sheet, out, missing);
-        }
+        const { text, missing } = hoverStyleText();
         let style = document.querySelector("style[data-harbor-hover-styles]");
         if (!style) {
             style = document.createElement("style");
@@ -429,7 +464,7 @@
             // Stay last, after stylesheets the page added since.
             style.parentNode.append(style);
         }
-        style.textContent = out.join("\n");
+        if (style.textContent !== text) style.textContent = text;
         for (let node = el; node; node = node.parentElement || node.getRootNode?.().host) {
             if (node.nodeType === 1) node.setAttribute(HOVER_ATTR, "");
         }
@@ -558,6 +593,13 @@
             }
             hovered = new WeakRef(el);
             return { missingSheets: applyHoverStyles(el) };
+        },
+        // A click moves the pointer: hover styles follow it to the clicked element.
+        pointerAt: ({ target }) => {
+            const el = need(target);
+            hovered = new WeakRef(el);
+            applyHoverStyles(el);
+            return true;
         },
         // Stylesheets Harbor fetched for hover styles: {href: text}, "" for one it could not get.
         hoverSheets: ({ sheets }) => {
