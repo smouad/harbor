@@ -333,9 +333,15 @@ final class AgentActions {
         if let target {
             element = try? await runtime("describe", ["target": target]) as? [String: Any]
         } else if action == "click", let x = step["x"], let y = step["y"] {
-            // A click by position is judged by what is under it, so it cannot go around the rules.
-            element = try? await runtime("describeAt", ["x": x, "y": y]) as? [String: Any]
-            facts.crossOriginFrame = element?["crossOrigin"] as? Bool == true
+            // A click by position is judged by what is under it, so it cannot go around the rules;
+            // when that cannot be found out, it does not happen.
+            do {
+                element = try await runtime("describeAt", ["x": x, "y": y]) as? [String: Any]
+            } catch {
+                throw StepError.invalid("Could not tell what is at \(x), \(y): \(error.agentMessage)")
+            }
+            facts.opaqueTarget = element?["opaque"] as? Bool == true
+            facts.text = "\(x),\(y)"
         } else if action == "press" {
             element = try? await runtime("describe", ["target": ":focus"]) as? [String: Any]
         }
@@ -346,6 +352,8 @@ final class AgentActions {
             facts.element = element["ref"] as? String ?? ""
         }
         if action == "navigate" { facts.host = URL(string: step["url"] as? String ?? "")?.host ?? "" }
+        // One approval covers a task's scripts for a while; the person sees the start of this one.
+        if action == "eval" { facts.name = String((step["code"] as? String ?? "").prefix(120)) }
         switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
         case .allowed: return
         case .needsApproval(let request): throw StepError.needsApproval(id: request.id, reason: request.reason)

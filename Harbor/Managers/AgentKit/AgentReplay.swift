@@ -69,12 +69,13 @@ final class AgentReplay {
         let held = text.contains("\"needs_approval\"")
         let step = Step(
             id: list.count + 1, date: started, tool: tool, detail: Self.detail(tool: tool, args: args),
-            ok: !result.isError && !held, summary: String(text.prefix(300)), url: webView?.url?.absoluteString,
+            ok: !result.isError && !held, summary: String(text.prefix(300)),
+            url: webView?.url.map { AgentHub.shared.vault.scrub($0.absoluteString) },
             milliseconds: Int(Date().timeIntervalSince(started) * 1000))
         list.append(step)
         steps[task.id] = list
         task.steps = list.count
-        if let url = webView?.url?.absoluteString { task.lastURL = url }
+        if let url = step.url { task.lastURL = url }
         append(step, taskID: task.id)
         if let webView, Self.changesPage.contains(tool) {
             Task { await self.captureFrame(step: step.id, taskID: task.id, webView: webView) }

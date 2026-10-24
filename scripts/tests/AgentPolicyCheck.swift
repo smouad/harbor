@@ -49,12 +49,19 @@ struct AgentPolicyCheck {
         precondition(AgentPlaceholders.fill("user:{{secret:pw}}!{{secret:k}}", lookup: { values[$0] }) == "user:hunter2!K")
         precondition(AgentPlaceholders.fill("{{secret:missing}}", lookup: { values[$0] }) == nil, "an unknown secret types nothing")
         precondition(AgentPlaceholders.fill("no secrets", lookup: { _ in nil }) == "no secrets")
-        let typed = ["pw": "p@ss word/1\"x"]
+        let typed: [String: Set<String>] = ["pw": ["p@ss word/1\"x"]]
         let scrubbed = AgentPlaceholders.scrub(
             "url=/login?pw=p%40ss+word%2F1%22x body={\"pw\":\"p@ss word/1\\\"x\"} raw p@ss word/1\"x", values: typed)
         precondition(!scrubbed.contains("p@ss") && !scrubbed.contains("p%40ss"), scrubbed)
         precondition(scrubbed.components(separatedBy: "{{secret:pw}}").count == 4, scrubbed)
-        precondition(AgentPlaceholders.scrub("abc and abc", values: ["s": "abc"]) == "abc and abc", "short values are left")
+        precondition(AgentPlaceholders.scrub("abc and abc", values: ["s": ["abc"]]) == "abc and abc", "short values are left")
+        let bang: [String: Set<String>] = ["pw": ["Passw0rd!(x)*"]]
+        for echoed in ["?pw=Passw0rd!(x)*", "?pw=Passw0rd%21%28x%29%2A", "pw=Passw0rd%21%28x%29*"] {
+            let out = AgentPlaceholders.scrub(echoed, values: bang)
+            precondition(!out.contains("Passw0rd"), out)
+        }
+        precondition(AgentPlaceholders.scrub("pw=Passw0rd%21%28x%29%2a", values: bang).contains("{{secret:pw}}"), "lowercase hex")
+        precondition(AgentPlaceholders.scrub("a=old-secret b=new-secret", values: ["k": ["old-secret", "new-secret"]]) == "a={{secret:k}} b={{secret:k}}", "every value a name had")
     }
 
     static func sensitivity() {
@@ -85,8 +92,9 @@ struct AgentPolicyCheck {
         precondition(reason("scroll") == nil)
         precondition(reason("eval", role: "", name: "") == "Runs a script on shop.example", "scripts ask once per task")
         var framed = AgentActionFacts(action: "click")
-        framed.crossOriginFrame = true
-        precondition(AgentSensitivity.reason(for: framed) == "Clicks inside a frame from another site")
+        framed.opaqueTarget = true
+        let opaque = AgentSensitivity.reason(for: framed)!
+        precondition(opaque == "Clicks inside something Harbor cannot see into" && AgentSensitivity.isSingleUse(opaque))
         precondition(AgentSensitivity.isSingleUse("Spends money") && !AgentSensitivity.isSingleUse("Signs in or grants access"))
         precondition(AgentSensitivity.matchesWord("pay", in: "display then pay now"), "a later whole-word hit counts")
     }

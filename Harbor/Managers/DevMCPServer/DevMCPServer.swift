@@ -434,7 +434,8 @@ final class DevMCPServer {
                 catch (e) { return String(__v); }
                 """
                 let result = try await wv.callAsyncJavaScript(wrapped, contentWorld: world)
-                let output = result as? String ?? String(describing: result)
+                // A file the agent reads later is a result too: no vault value goes into it.
+                let output = AgentHub.shared.vault.scrub(result as? String ?? String(describing: result))
                 guard let saveURL else { return text(output) }
                 try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 let data = Data(output.utf8)

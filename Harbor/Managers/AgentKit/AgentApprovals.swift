@@ -53,14 +53,19 @@ final class AgentApprovals {
     /// Actions the critic found on-goal this session, so it is asked once per action. Only a
     /// real verdict counts: a timeout or a missing model is no answer.
     @ObservationIgnored private var criticCleared: Set<String> = []
+    @ObservationIgnored private var criticQuietUntil = Date.distantPast
 
     private static let grantLifetime: TimeInterval = 120
 
     func gate(task: AgentTask, facts: AgentActionFacts) async -> Gate {
         if let refusal = Self.refusal(task) { return .refused(refusal) }
         // The exact control and text: approving one "Place order" approves no other.
-        let fingerprint = [task.id, facts.action, facts.element, facts.role, facts.name, facts.host, facts.key,
-                           String(facts.text.hashValue)].joined(separator: "|")
+        // A script approval covers the task's scripts on that site for a while (one script often
+        // needs a few tries); everything else covers that one control and text.
+        let fingerprint = facts.action == "eval"
+            ? [task.id, "eval", facts.host].joined(separator: "|")
+            : [task.id, facts.action, facts.element, facts.role, facts.name, facts.host, facts.key,
+               String(facts.text.hashValue)].joined(separator: "|")
         if let grant = granted[fingerprint], grant.until > Date() {
             if grant.singleUse { granted.removeValue(forKey: fingerprint) }
             return .allowed
@@ -70,14 +75,17 @@ final class AgentApprovals {
         var reason: String?
         switch task.confirm {
         case .never: return .allowed
-        case .always: reason = "Changes the page"
+        // The rules still name what an action does, so spending stays single-use under `always`.
+        case .always: reason = AgentSensitivity.reason(for: facts) ?? "Changes the page"
         case .sensitive:
             reason = AgentSensitivity.reason(for: facts)
-            if reason == nil, let goal = task.goal, worthACriticCheck(facts), !criticCleared.contains(fingerprint) {
+            if reason == nil, let goal = task.goal, worthACriticCheck(facts), !criticCleared.contains(fingerprint),
+               criticQuietUntil < Date() {
                 switch await AgentOnDevice.critic(goal: goal, facts: facts) {
                 case .fits: criticCleared.insert(fingerprint)
                 case .off(let why): reason = why
-                case .unknown: break
+                // A slow or missing model would add its wait to every click: rest it a minute.
+                case .unknown: criticQuietUntil = Date().addingTimeInterval(60)
                 }
             }
         }
@@ -148,6 +156,7 @@ final class AgentApprovals {
         case "check": verb = "Tick"
         case "uncheck": verb = "Untick"
         case "navigate": return "Open \(facts.host.isEmpty ? facts.url : facts.host)"
+        case "eval": return "Run a script on \(facts.host.isEmpty ? "the page" : facts.host): \(facts.name)"
         case "upload": return "Upload a file to \(facts.host)"
         default: verb = facts.action.capitalized
         }

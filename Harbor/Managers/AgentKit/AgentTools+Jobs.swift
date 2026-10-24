@@ -37,7 +37,7 @@ extension AgentToolbox {
         let job = AgentHub.shared.jobs.start(kind: "crawl", title: "Crawl \(start.host ?? "")", taskID: task?.id) { job in
             try await crawlPages(from: start, limit: limit, sameHost: sameHost, dir: dir, task: task, job: job, browser: browser)
         }
-        return .json(job.summary)
+        return .job(job)
     }
 
     private static func crawlPages(from start: URL, limit: Int, sameHost: Bool, dir: URL, task: AgentTask?,

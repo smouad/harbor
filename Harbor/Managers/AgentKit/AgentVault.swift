@@ -43,8 +43,9 @@ final class AgentVault {
     }
 
     private(set) var entries: [Entry] = []
-    /// Values typed this session, by name, kept in memory only so `scrub` can find them.
-    @ObservationIgnored private var typed: [String: String] = [:]
+    /// Every value typed this session, by name, kept in memory only so `scrub` can find them; an
+    /// old value stays after the secret changes or goes, since a page may still hold it.
+    @ObservationIgnored private var typed: [String: Set<String>] = [:]
 
     nonisolated private static let service = (Bundle.main.bundleIdentifier ?? "Harbor") + ".agent-vault"
     private static var file: URL { AgentHub.directory.appendingPathComponent("vault.json") }
@@ -68,7 +69,7 @@ final class AgentVault {
             }
             let value = try await Self.readOffMain(name)
             values[name] = value
-            typed[name] = value
+            typed[name, default: []].insert(value)
         }
         guard let filled = AgentPlaceholders.fill(text, lookup: { values[$0] }) else {
             throw VaultError.unknown(AgentPlaceholders.names(in: text).first ?? "")
@@ -128,7 +129,6 @@ final class AgentVault {
                                     kSecAttrService as String: Self.service, kSecAttrAccount as String: name]
         _ = await Task.detached(priority: .userInitiated) { SecItemDelete(query as CFDictionary) }.value
         entries.removeAll { $0.name == name }
-        typed.removeValue(forKey: name)
         persist()
     }
 

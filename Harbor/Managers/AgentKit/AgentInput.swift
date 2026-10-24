@@ -106,14 +106,19 @@ enum AgentInput {
                 continuation = nil
             }
         }
+        let once = Once()
         _ = await AgentDeadline.run(2) {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                let once = Once()
-                once.continuation = continuation
-                // Made outside the guarded call: WebKit keeps this block, and a block made inside
-                // that non-escaping closure would carry its context out with it.
-                let done: @convention(block) () -> Void = { once.resume() }
-                if HarborCatchObjCException({ after(webView, selector, done) }) != nil { once.resume() }
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    once.continuation = continuation
+                    // Made outside the guarded call: WebKit keeps this block, and a block made
+                    // inside that non-escaping closure would carry its context out with it.
+                    let done: @convention(block) () -> Void = { once.resume() }
+                    if HarborCatchObjCException({ after(webView, selector, done) }) != nil { once.resume() }
+                }
+            } onCancel: {
+                // The deadline won: end the wait even if WebKit never calls back (its page died).
+                Task { @MainActor in once.resume() }
             }
         }
     }

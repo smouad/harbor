@@ -118,7 +118,7 @@ extension AgentToolbox {
             let job = AgentHub.shared.jobs.start(kind: "read", title: "Read \(urls.count) pages", taskID: call.task?.id) { job in
                 try await readPages(urls, options: options, dir: dir, scope: scope, job: job, browser: call.browser)
             }
-            return .json(job.summary)
+            return .job(job)
         }
         let webView: WKWebView
         if let string = call.args.string("url") {
@@ -126,8 +126,12 @@ extension AgentToolbox {
             if let existing = call.webView, let task = call.task {
                 // In a task, opening a page goes through its approvals like a navigate step.
                 webView = existing
-                _ = try await AgentActions(webView: existing, task: task, deadline: call.deadline.addingTimeInterval(-1))
-                    .perform(["action": "navigate", "url": url.absoluteString])
+                do {
+                    _ = try await AgentActions(webView: existing, task: task, deadline: call.deadline.addingTimeInterval(-1))
+                        .perform(["action": "navigate", "url": url.absoluteString])
+                } catch AgentActions.StepError.needsApproval(let id, let reason) {
+                    return .json(["ok": false, "needs_approval": id, "reason": reason])
+                }
                 let page = try await AgentRuntime.object("markdown", options, in: webView)
                 return .untrusted(page, origin: webView.url?.host)
             } else if let existing = call.webView {
@@ -202,6 +206,7 @@ extension AgentToolbox {
         if let task = call.task, task.confirm != .never {
             var facts = AgentActionFacts(action: "upload")
             facts.host = webView.url?.host ?? ""
+            facts.text = files.map(\.lastPathComponent).joined(separator: ", ")
             switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
             case .allowed: break
             case .needsApproval(let request): return .json(["ok": false, "needs_approval": request.id, "reason": request.reason])

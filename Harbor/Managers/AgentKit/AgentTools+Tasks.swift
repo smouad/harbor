@@ -56,11 +56,11 @@ extension AgentToolbox {
             let webView = try call.browser.agentWebView(item: item)
             _ = await AgentPageWait.open(webView, url: url, timeout: min(15, call.remaining - 2))
         }
-        return .json(task.summary)
+        return .untrusted(task.summary, origin: nil)
     }
 
     private static let taskList = AgentTool("task_list", "Tasks this session with their status.", page: .none) { _ in
-        .json(AgentHub.shared.tasks.all.map(\.summary))
+        .untrusted(AgentHub.shared.tasks.all.map(\.summary), origin: nil)
     }
 
     private static let taskUpdate = AgentTool(
@@ -69,7 +69,7 @@ extension AgentToolbox {
     ) { call in
         let task = try task(call)
         task.note = String(try call.args.required("note").prefix(300))
-        return .json(task.summary)
+        return .untrusted(task.summary, origin: nil)
     }
 
     private static let taskHandoff = AgentTool(
@@ -84,7 +84,7 @@ extension AgentToolbox {
         AgentHub.shared.tasks.set(task, .needsYou(reason))
         call.browser.tabs.selectForAgent(task.itemID)
         AgentNotifier.handoff(task, reason: reason)
-        return .json(task.summary)
+        return .untrusted(task.summary, origin: nil)
     }
 
     private static let taskWait = AgentTool(
@@ -94,7 +94,7 @@ extension AgentToolbox {
         let task = try task(call)
         let timeout = min(call.args.double("timeout") ?? 25, call.remaining - 1)
         _ = await AgentHub.shared.tasks.changed.wait(until: { !task.isPausedForPerson }, timeout: timeout)
-        return .json(task.summary)
+        return .untrusted(task.summary, origin: nil)
     }
 
     private static let taskEnd = AgentTool(
@@ -105,13 +105,17 @@ extension AgentToolbox {
         required: ["task", "outcome"]
     ) { call in
         let task = try task(call)
-        // The person is in that tab now: ending the task would hand it back to any caller.
-        if task.isPausedForPerson { throw AgentError.paused(task.title) }
+        if task.isFinished { throw AgentError.invalid("Task \(task.id) has already ended") }
+        // The person drives that tab now; they end it, or hand it back first.
+        if task.status == .personControl { throw AgentError.paused(task.title) }
+        // Giving up on a step the person never did: their tab stays as it is.
+        let handedOver = task.isPausedForPerson
+        if handedOver { AgentNotifier.withdraw("handoff-\(task.id)") }
         let summary = call.args.string("summary").map { String($0.prefix(300)) }
         AgentHub.shared.tasks.set(task, call.args.string("outcome") == "failed" ? .failed(summary) : .done(summary))
         AgentHub.shared.approvals.dropAll(for: task.id)
-        if call.args.bool("closeTab") == true { call.browser.closeAgentTab(task.itemID) }
-        return .json(task.summary)
+        if call.args.bool("closeTab") == true, !handedOver { call.browser.closeAgentTab(task.itemID) }
+        return .untrusted(task.summary, origin: nil)
     }
 
     private static let taskReplay = AgentTool(
@@ -120,7 +124,7 @@ extension AgentToolbox {
     ) { call in
         let task = try task(call)
         let steps = AgentHub.shared.replay.steps(for: task).map(\.json)
-        return .json(["task": task.id, "dir": AgentReplay.directory(for: task.id).path, "steps": steps])
+        return .untrusted(["task": task.id, "dir": AgentReplay.directory(for: task.id).path, "steps": steps], origin: nil)
     }
 
     private static let approvalWait = AgentTool(

@@ -363,13 +363,29 @@
         point,
         describe: ({ target }) => describe(need(target)),
         // Resolves after the page has drawn a frame: by then it knows where its view is.
-        frame: () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))),
+        // Never longer than a quarter second: a page that is not drawing would hold the click.
+        frame: () => new Promise(done => {
+            requestAnimationFrame(() => requestAnimationFrame(() => done(true)));
+            setTimeout(() => done(false), 250);
+        }),
         // What is under a point, looking into same-origin frames. A frame from another site is
         // reported as such: its content cannot be seen, so a click there cannot be judged.
         describeAt: ({ x, y }) => {
             let doc = document, px = x, py = y, el = null;
             for (let depth = 0; depth < 8; depth++) {
                 el = doc.elementFromPoint(px, py);
+                // Into open shadow roots; a closed one hides what is under the point.
+                while (el && el.shadowRoot) {
+                    const inner = el.shadowRoot.elementFromPoint(px, py);
+                    if (!inner || inner === el) break;
+                    el = inner;
+                }
+                if (el && !el.shadowRoot && el.attachShadow && el.matches(":defined") && customElements.get(el.localName) && !el.firstElementChild) {
+                    return { opaque: true, role: "custom element", name: el.localName, ref: refFor(el) };
+                }
+                if (el && ["EMBED", "OBJECT", "CANVAS"].includes(el.tagName)) {
+                    return { opaque: true, role: el.tagName.toLowerCase(), name: "", ref: refFor(el) };
+                }
                 if (!el || (el.tagName !== "IFRAME" && el.tagName !== "FRAME")) break;
                 let inner = null;
                 try { inner = el.contentDocument; } catch { inner = null; }
@@ -377,7 +393,7 @@
                 if (!inner) {
                     let host = "";
                     try { host = new URL(el.src, location.href).hostname; } catch { host = ""; }
-                    return { crossOrigin: true, role: "frame", name: host, ref: refFor(el) };
+                    return { opaque: true, role: "frame", name: host, ref: refFor(el) };
                 }
                 doc = inner;
                 px -= r.left + el.clientLeft;
@@ -683,7 +699,8 @@
             if (!pending) return;
             clearTimeout(pending.timer);
             pendingInput.delete(el);
-            const sensitive = el.type === "password" || secretFields.has(el) || /card|cc-|cvv|cvc|iban|ssn|otp|one-time/i.test(`${el.name} ${el.id} ${el.autocomplete}`);
+            const sensitive = el.type === "password" || secretFields.has(el)
+                || /pass|pwd|card|cc-|cvv|cvc|iban|ssn|\botp\b|one-time/i.test(`${el.name} ${el.id} ${el.autocomplete}`);
             post({ action: "fill", ...selectorsFor(el), text: sensitive ? "" : el.value, sensitive });
         };
         const onClick = e => {

@@ -80,6 +80,7 @@ extension AgentToolbox {
             facts.role = "site tool"
             facts.name = name.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
             facts.host = webView.url?.host ?? ""
+            facts.text = AgentJSON.compact(call.args.object("arguments") ?? [:])
             switch await AgentHub.shared.approvals.gate(task: task, facts: facts) {
             case .allowed: break
             case .needsApproval(let request): return .json(["ok": false, "needs_approval": request.id, "reason": request.reason])

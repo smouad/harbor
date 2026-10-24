@@ -320,11 +320,13 @@ def tasks_scope_approvals_handoff_replay():
     paused = call("act", {"task": task, "actions": [{"action": "click", "target": "#save"}]}, expect_error=True)
     assert "the person has control" in paused
     assert call("task_wait", {"task": task, "timeout": 1})["status"] == "needs_you"
-    refused = call("task_end", {"task": task, "outcome": "done"}, expect_error=True)
-    assert "the person has control" in refused, "a task the person holds cannot be ended under them"
+    # The agent may give up on a step it handed over; the person's tab stays as it is.
+    ended = call("task_end", {"task": task, "outcome": "failed", "summary": "No sign-in", "closeTab": True})
+    assert ended["status"] == "failed"
+    call("task_end", {"task": task, "outcome": "done"}, expect_error=True)
     removed = call("closeTabs", {"regular": True})
-    assert any(t["task"] == task for t in call("task_list")), removed
-    assert "belongs to task" in call("observe", expect_error=True), "the task's tab survived closeTabs"
+    refusal = call("observe", expect_error=True)
+    assert "belongs to task" in refusal and "which has ended" in refusal, (refusal, removed)
 
 
 @test

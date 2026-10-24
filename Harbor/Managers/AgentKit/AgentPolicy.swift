@@ -60,11 +60,13 @@ enum AgentPlaceholders {
     /// `text` with each value put back as its placeholder, raw or in the encodings a page passes
     /// it on in (a form's URL, a request body, JSON). Values shorter than four characters are left:
     /// they would match ordinary text.
-    static func scrub(_ text: String, values: [String: String]) -> String {
+    static func scrub(_ text: String, values: [String: Set<String>]) -> String {
         var out = text
-        for (name, value) in values where value.count >= 4 {
-            for form in encodings(of: value) where out.contains(form) {
-                out = out.replacingOccurrences(of: form, with: "{{secret:\(name)}}")
+        for (name, set) in values {
+            for value in set where value.count >= 4 {
+                for form in encodings(of: value) where out.contains(form) {
+                    out = out.replacingOccurrences(of: form, with: "{{secret:\(name)}}")
+                }
             }
         }
         return out
@@ -72,11 +74,13 @@ enum AgentPlaceholders {
 
     static func encodings(of value: String) -> [String] {
         var forms = [value]
-        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        if let percent = value.addingPercentEncoding(withAllowedCharacters: unreserved) {
-            forms.append(percent)
-            forms.append(percent.replacingOccurrences(of: "%20", with: "+"))
-            forms.append(percent.lowercased())
+        // The characters each encoder leaves alone: RFC 3986 (Foundation), encodeURIComponent,
+        // and form encoding (URLSearchParams, a form's GET or POST).
+        let sets = ["-._~", "-_.!~*'()", "-_.*"]
+        for extra in sets {
+            guard let percent = value.addingPercentEncoding(withAllowedCharacters: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: extra))) else { continue }
+            let lowered = percent.lowercasedHex()
+            forms += [percent, percent.replacingOccurrences(of: "%20", with: "+"), lowered, lowered.replacingOccurrences(of: "%20", with: "+")]
         }
         // JSON as a page writes it (JSON.stringify leaves "/" alone) and as Foundation does.
         for options: JSONSerialization.WritingOptions in [[.fragmentsAllowed, .withoutEscapingSlashes], [.fragmentsAllowed]] {
@@ -122,8 +126,9 @@ struct AgentActionFacts {
     var element: String = ""
     /// The text the step types, as written (placeholders, never secret values).
     var text: String = ""
-    /// The point clicked lies in a frame from another site, whose content Harbor cannot see.
-    var crossOriginFrame = false
+    /// The point clicked lies in something Harbor cannot see into: a frame from another site, a
+    /// plugin, a canvas or a closed shadow root.
+    var opaqueTarget = false
 }
 
 enum AgentSensitivity {
@@ -134,7 +139,7 @@ enum AgentSensitivity {
         // A script can do anything a click can, and read what was typed: one approval covers
         // the task's scripts for a while (the grant is per task, not per script).
         if action == "eval" { return "Runs a script on \(facts.host.isEmpty ? "the page" : facts.host)" }
-        if facts.crossOriginFrame { return "Clicks inside a frame from another site" }
+        if facts.opaqueTarget { return "Clicks inside something Harbor cannot see into" }
         if ["click", "submit", "check", "press"].contains(action) {
             for (words, why) in rules where words.contains(where: { matchesWord($0, in: name) }) {
                 return why
@@ -153,7 +158,8 @@ enum AgentSensitivity {
     /// Approvals that count once: spending, sending, deleting and moving money are approved per
     /// action, not for a while.
     static func isSingleUse(_ reason: String) -> Bool {
-        ["Spends money", "Sends or publishes something", "Deletes something", "Moves money", "Enters payment details"].contains(reason)
+        ["Spends money", "Sends or publishes something", "Deletes something", "Moves money", "Enters payment details",
+         "Clicks inside something Harbor cannot see into"].contains(reason)
             || reason.hasPrefix("Uploads")
     }
 
@@ -238,5 +244,23 @@ enum AgentTemplate {
                   let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else { return "\(value)" }
             return String(decoding: data, as: UTF8.self)
         }
+    }
+}
+
+private extension String {
+    /// `%2F` → `%2f`: some encoders write lowercase hex.
+    func lowercasedHex() -> String {
+        var out = ""
+        var index = startIndex
+        while index < endIndex {
+            if self[index] == "%", let end = self.index(index, offsetBy: 3, limitedBy: endIndex) {
+                out += self[index..<end].lowercased()
+                index = end
+            } else {
+                out.append(self[index])
+                index = self.index(after: index)
+            }
+        }
+        return out
     }
 }
