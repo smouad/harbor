@@ -189,6 +189,39 @@ enum AgentSensitivity {
     }
 }
 
+// MARK: - Upload paths
+
+/// Which of the person's files an agent may upload. Anything they can read, except where keys,
+/// passwords and sign-ins live: hidden files and folders in the home folder (.ssh, .aws, shell
+/// history), the Library folder apart from iCloud Drive and cloud storage, and system files.
+enum AgentUploadPaths {
+    /// Why `path` (absolute, symlinks resolved) may not be uploaded; nil when it may.
+    static func refusal(_ path: String, home: String) -> String? {
+        let parts = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let homeParts = URL(fileURLWithPath: home).standardizedFileURL.pathComponents
+        if parts.count > homeParts.count, Array(parts.prefix(homeParts.count)) == homeParts {
+            let inside = parts[homeParts.count...]
+            if inside.first?.hasPrefix(".") == true {
+                return "hidden files in the home folder hold keys and credentials"
+            }
+            if inside.first == "Library", !(inside.count > 1 && cloudFolders.contains(inside.dropFirst().first!)) {
+                return "the Library folder holds passwords, cookies and app data"
+            }
+            return nil
+        }
+        if systemFolders.contains(where: { parts.starts(with: $0) }) {
+            return "system files are not uploaded"
+        }
+        return nil
+    }
+
+    private static let cloudFolders: Set<String> = ["Mobile Documents", "CloudStorage"]
+    private static let systemFolders: [[String]] = [
+        ["/", "etc"], ["/", "private", "etc"], ["/", "var"], ["/", "private", "var"],
+        ["/", "System"], ["/", "Library", "Keychains"]
+    ]
+}
+
 // MARK: - Templates
 
 /// `${vars.name}`, `${input.x.y}` in recipe and act steps, read from named scopes. A string that is

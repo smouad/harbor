@@ -34,6 +34,8 @@ final class AgentActions {
     let deadline: Date
     /// Values bound by `as`, readable in later steps as `${vars.name}`.
     var vars: [String: Any]
+    /// Other names a step reads besides `vars`: a recipe run's `input` and a `foreach` item.
+    var scopes: [String: Any] = [:]
     /// Where the pointer was left, so a `human` move starts from there.
     private var lastPointer = CGPoint(x: 40, y: 40)
 
@@ -64,7 +66,7 @@ final class AgentActions {
             if task.isFinished { throw AgentError.invalid("Task \(task.id) has ended") }
             if task.isPausedForPerson { throw AgentError.paused(task.title) }
         }
-        let step = AgentTemplate.fill(raw, scopes: ["vars": vars]) as? [String: Any] ?? raw
+        let step = AgentTemplate.fill(raw, scopes: scopes.merging(["vars": vars]) { _, own in own }) as? [String: Any] ?? raw
         guard let action = step["action"] as? String else { throw StepError.invalid("Each step needs an action") }
         let target = step["target"] as? String
         let native = (step["input"] as? String).map { $0 == "native" } ?? Self.nativeByDefault.contains(action)
@@ -378,6 +380,12 @@ enum AgentPageWait {
     /// the load to start, then to end, then for the page itself to say it is the new document.
     static func open(_ webView: WKWebView, url: URL, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
+        // A page just put back (after a relaunch or unload) may still be restoring its old address;
+        // that load ending, or the blank page it leaves, would read as this one.
+        if webView.isLoading {
+            webView.stopLoading()
+            _ = await load(webView, timeout: min(2, timeout))
+        }
         let previous = webView.url?.absoluteString
         let reloading = previous == url.absoluteString
         (webView as? SessionWebView)?.owningSession?.prepareUserAgent(for: url)
@@ -387,7 +395,8 @@ enum AgentPageWait {
         while Date() < deadline {
             let state = try? await webView.callAsyncJavaScript(
                 "return [document.readyState, location.href]", contentWorld: AgentRuntime.world) as? [String]
-            if let state, state.count == 2, state[0] == "complete", reloading || state[1] != previous {
+            if let state, state.count == 2, state[0] == "complete", reloading || state[1] != previous,
+               state[1] != "about:blank" || url.absoluteString == "about:blank" {
                 return true
             }
             try? await Task.sleep(for: .milliseconds(100))

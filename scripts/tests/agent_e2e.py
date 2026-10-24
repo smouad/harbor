@@ -316,7 +316,30 @@ def upload_uses_the_page_picker():
     assert page("return window.files") == ["a.txt:12", "b.txt:6"]
     call("upload", {"target": "input[type=file]", "files": ["../../etc/hosts"]}, expect_error=True)
     no_input = call("upload", {"target": "#save", "files": ["uploads/a.txt"]}, expect_error=True)
-    assert "No file input" in no_input, no_input
+    assert "did not take files dropped" in no_input, no_input
+    # Any path the person has, but not where keys and sign-ins live.
+    outside = os.path.join("/tmp", f"harbor-e2e-{os.getpid()}.txt")
+    with open(outside, "w") as f:
+        f.write("from tmp")
+    try:
+        result = call("upload", {"target": "input[type=file]", "files": [outside]})
+        assert page("return window.files") == [os.path.basename(outside) + ":8"], page("return window.files")
+    finally:
+        os.remove(outside)
+    for refused in ["~/.ssh/id_ed25519", "~/Library/Keychains/login.keychain-db", "/etc/hosts"]:
+        text = call("upload", {"target": "input[type=file]", "files": [refused]}, expect_error=True)
+        assert "does not upload" in text, text
+
+
+@test
+def upload_drops_on_a_drop_zone():
+    open_page("form.html")
+    result = call("upload", {"target": "#dropzone", "files": ["uploads/a.txt", "uploads/b.txt"]})
+    assert result.get("dropped") and result["files"] == ["a.txt", "b.txt"], result
+    deadline = time.time() + 3
+    while time.time() < deadline and not page("return window.dropped || null"):
+        time.sleep(0.1)
+    assert page("return window.dropped") == ["a.txt:12:hello", "b.txt:6:secon"], page("return window.dropped")
 
 
 @test
@@ -477,6 +500,57 @@ def recipes_record_run_heal_repair():
     assert call("recipe_show", {"name": "e2e-fix"})["steps"][2]["target"] == '[data-testid="add-note"]'
     call("recipe_save", {"recipe": {"name": "show", "steps": [{"action": "reload"}]}}, expect_error=True)
     for name in ["e2e-note", "e2e-note-v2", "e2e-fix"]:
+        call("recipe_delete", {"name": name})
+
+
+@test
+def recipe_control_flow():
+    hooks = """
+export function shout({ arg }) { return String(arg).toUpperCase(); }
+export async function total({ vars }) { return vars.added.length; }
+function spin() { while (true) {} }
+"""
+    steps = [
+        {"action": "navigate", "url": f"{BASE}/recipe.html"},
+        {"action": "set", "var": "added", "value": []},
+        {"foreach": "${vars.items}", "as": "item", "steps": [
+            {"when": "item.skip", "steps": [{"action": "log", "message": "skip ${item.name}"}], "else": [
+                {"action": "call", "hook": "shout", "arg": "${item.name}", "as": "loud"},
+                {"action": "fill", "target": "#title", "text": "${vars.loud}"},
+                {"action": "click", "target": "#add"},
+                {"action": "set", "var": "count", "expr": "vars.added.length + 1"},
+                {"action": "eval", "code": "return [...document.querySelectorAll('#notes li')].map(li => li.textContent)", "as": "added"},
+            ]},
+        ]},
+        {"action": "call", "hook": "total", "as": "total"},
+        {"id": "again", "action": "set", "var": "rounds", "expr": "(vars.rounds || 0) + 1"},
+        {"when": "vars.rounds < 3", "steps": [{"action": "goto", "target": "again"}]},
+        {"action": "click", "target": "#missing", "timeout": 300, "onFail": "continue"},
+        {"action": "click", "target": "#also-missing", "timeout": 300, "retry": {"times": 1, "delayMs": 50}, "onFail": "goto:end"},
+        {"action": "log", "message": "never logged"},
+        {"id": "end", "action": "snapshot", "as": "seen"},
+    ]
+    call("recipe_save", {"recipe": {"name": "e2e-flow", "hooks": hooks, "vars": {"items": [
+        {"name": "milk"}, {"name": "eggs", "skip": True}, {"name": "tea"}]}, "steps": steps}})
+    run = wait_job(call("recipe_run", {"name": "e2e-flow"})["job"])
+    assert run["state"] == "done", run
+    result = run["result"]
+    assert result["vars"]["added"] == ["MILK", "TEA"], result["vars"]
+    assert result["vars"]["total"] == 2 and result["vars"]["rounds"] == 3 and result["vars"]["count"] == 2, result["vars"]
+    assert "skip eggs" in result["log"] and "never logged" not in result["log"], result["log"]
+    assert [f["step"].split(". ")[1] for f in result["failed"]] == ["click"], result["failed"]
+    assert any(e.get("name") == "Add note" for e in result["vars"]["seen"]), result["vars"]["seen"][:3]
+    # A hook that never returns is stopped; a step that names no hook or a goto to nowhere is refused.
+    call("recipe_save", {"recipe": {"name": "e2e-spin", "hooks": hooks, "steps": [{"action": "call", "hook": "spin"}]}})
+    started = time.time()
+    spun = wait_job(call("recipe_run", {"name": "e2e-spin"})["job"], timeout=30)
+    assert spun["state"] == "failed" and time.time() - started < 20, spun
+    bad = call("recipe_save", {"recipe": {"name": "e2e-bad", "steps": [{"action": "goto", "target": "nowhere"},
+                                                                        {"action": "call", "hook": "x"}]}}, expect_error=True)
+    assert "names no step id" in bad and "call needs a hook" in bad, bad
+    broken = call("recipe_save", {"recipe": {"name": "e2e-bad", "hooks": "function (", "steps": [{"action": "reload"}]}}, expect_error=True)
+    assert "hooks do not run" in broken, broken
+    for name in ["e2e-flow", "e2e-spin"]:
         call("recipe_delete", {"name": name})
 
 

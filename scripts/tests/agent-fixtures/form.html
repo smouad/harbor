@@ -22,6 +22,7 @@
 <button id="open-popup" onclick="window.open('/article.html', '_blank')">Open popup</button></div>
 <div class="row"><button id="buy">Place order</button> <button id="dlg">Ask</button></div>
 <div class="row"><input type="file" id="file" multiple style="display:none"><button id="drop" onclick="document.getElementById('file').click()">Attach files</button></div>
+<div class="row"><div id="dropzone" style="padding:12px;border:1px dashed #888">Drop files here</div></div>
 <form id="f" action="/article.html" method="get"><input name="q" id="q" aria-label="Search"><button type="submit" id="go">Search</button></form>
 <iframe id="frame" src="/frame.html" style="width:300px;height:80px"></iframe>
 <p id="far"><button id="far-btn">Far away</button></p>
@@ -34,6 +35,13 @@
   document.getElementById("save").onclick = () => { window.saved = (window.saved || 0) + 1; };
   document.getElementById("far-btn").onclick = () => { window.farClicked = true; };
   document.getElementById("dlg").onclick = () => { window.confirmed = confirm("Delete everything?"); window.prompted = prompt("Your nickname?", "anon"); alert("done"); };
+  const zone = document.getElementById("dropzone");
+  zone.addEventListener("dragover", e => e.preventDefault());
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    Promise.all([...e.dataTransfer.files].map(async f => f.name + ":" + f.size + ":" + (await f.text()).slice(0, 5)))
+      .then(seen => { window.dropped = seen; });
+  });
   document.getElementById("file").onchange = (e) => { window.files = [...e.target.files].map(f => f.name + ":" + f.size); };
   document.getElementById("covered").onclick = () => { window.coveredClicked = true; };
   window.showCover = () => { document.getElementById("cover").style.display = "block"; };

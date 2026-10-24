@@ -4,7 +4,7 @@
 //
 //  Checks AgentKit's browser-free rules: task scope, secret placeholders, sensitive actions and
 //  step templates. Run:
-//    xcrun swiftc -parse-as-library Harbor/Managers/AgentKit/AgentPolicy.swift scripts/tests/AgentPolicyCheck.swift -o /tmp/apc && /tmp/apc
+//    xcrun swiftc -parse-as-library Harbor/Managers/AgentKit/AgentPolicy.swift Harbor/Managers/AgentKit/AgentExpression.swift scripts/tests/AgentPolicyCheck.swift -o /tmp/apc && /tmp/apc
 //
 
 import Foundation
@@ -16,7 +16,62 @@ struct AgentPolicyCheck {
         placeholders()
         sensitivity()
         templates()
+        uploadPaths()
+        expressions()
         print("AgentPolicyCheck passed")
+    }
+
+    static func expressions() {
+        let scopes: [String: Any] = [
+            "vars": ["count": NSNumber(value: 3), "name": "Ada", "rows": [["n": 1], ["n": 2]], "on": NSNumber(value: true),
+                     "empty": "", "none": NSNull()],
+            "input": ["limit": NSNumber(value: 2)],
+            "item": ["title": "Hi"]
+        ]
+        func value(_ e: String) -> Any { try! AgentExpression.evaluate(e, scopes: scopes) }
+        func yes(_ e: String) -> Bool { AgentExpression.truthy(value(e)) }
+        precondition(yes("vars.count > input.limit"))
+        precondition(yes("vars.count == 3"), "a decoded number equals a literal")
+        precondition(!yes("vars.count == \"3\""), "strict: a number never equals text")
+        precondition(yes("vars.name == 'Ada' && !vars.empty"))
+        precondition(yes("vars.rows.length == 2 && vars.rows.1.n == 2"), "length and list indexes")
+        precondition(yes("item.title == \"Hi\""), "a foreach alias at the top level")
+        precondition(yes("vars.on"), "a decoded true is true")
+        precondition(!yes("vars.none") && yes("vars.none == null"))
+        precondition(AgentExpression.text(value("vars.count - 1")) == "2", "a minus after a value subtracts")
+        precondition(AgentExpression.text(value("-2 + 5")) == "3")
+        precondition(AgentExpression.text(value("'n=' + vars.count")) == "n=3", "+ with text joins")
+        precondition(AgentExpression.text(value("(1 + 2) * 3")) == "9")
+        precondition(AgentExpression.text(value("(vars.missing || 0) + 1")) == "1", "|| gives the operand, as in JavaScript")
+        precondition(AgentExpression.text(value("vars.name && vars.count")) == "3")
+        precondition(yes("vars.missing == null") && !yes("item.skip"), "a field an object lacks reads null")
+        precondition((try? AgentExpression.evaluate("nothing.x", scopes: scopes)) == nil, "an unknown name is an error")
+        precondition((try? AgentExpression.evaluate("vars.name.first", scopes: scopes)) == nil, "text has no fields")
+        precondition((try? AgentExpression.evaluate("vars.count +", scopes: scopes)) == nil)
+        precondition((try? AgentExpression.evaluate("alert(1)", scopes: scopes)) == nil, "no calls")
+        precondition((try? AgentExpression.evaluate("vars.count = 4", scopes: scopes)) == nil, "no assignment")
+    }
+
+    static func uploadPaths() {
+        let home = "/Users/p"
+        let ok = { (path: String) in AgentUploadPaths.refusal(path, home: home) == nil }
+        precondition(ok("/Users/p/Documents/cv.pdf"))
+        precondition(ok("/Users/p/Desktop/a b.png"))
+        precondition(ok("/private/tmp/x.txt"), "temporary files are fine")
+        precondition(ok("/Users/p/Library/Mobile Documents/com~apple~CloudDocs/x.pdf"), "iCloud Drive is the person's files")
+        precondition(ok("/Users/p/Library/CloudStorage/Dropbox/x.pdf"))
+        precondition(ok("/Users/p/Projects/.env.example"), "a dotfile deeper down is only refused at the top")
+        precondition(!ok("/Users/p/.ssh/id_ed25519"))
+        precondition(!ok("/Users/p/.zsh_history"))
+        precondition(!ok("/Users/p/.aws/credentials"))
+        precondition(!ok("/Users/p/Library/Keychains/login.keychain-db"))
+        precondition(!ok("/Users/p/Library/Application Support/com.mouad.harbor/dev-mcp-token"))
+        precondition(!ok("/Users/p/Library/Cookies/Cookies.binarycookies"))
+        precondition(!ok("/Users/p/Library"), "the folder itself")
+        precondition(!ok("/private/etc/master.passwd"))
+        precondition(!ok("/etc/hosts"))
+        precondition(!ok("/private/var/db/x"))
+        precondition(!ok("/Library/Keychains/System.keychain"))
     }
 
     static func scope() {

@@ -185,24 +185,19 @@ extension AgentToolbox {
 
     private static let upload = AgentTool(
         "upload",
-        "Put files into a file input (or the file input inside a drop zone) as if the person picked them. files are paths relative to ~/Downloads/Harbor MCP; Harbor reads nothing outside that folder. Uses the page's own file picker, so change events and validation run as for a person.",
+        "Put files into a file input as if the person picked them, through the page's own picker so change events and validation run as for a person. A target with no file input in it (a drop zone) gets the files dropped on it instead, at most 25 MB. files are absolute paths (or ~/…), or paths relative to ~/Downloads/Harbor MCP; hidden files in the home folder, ~/Library (except iCloud Drive and cloud storage) and system files are refused.",
         properties: [
-            "target": ["type": "string", "description": "The file input, a ref or selector; or an element containing one"],
+            "target": ["type": "string", "description": "The file input, a ref or selector; an element containing one; or a drop zone"],
             "files": ["type": "array", "items": ["type": "string"]]
         ],
         required: ["target", "files"]
     ) { call in
         let webView = try call.page()
         let target = try call.args.required("target")
-        let files = try (call.args.strings("files") ?? []).map { path -> URL in
-            guard let url = DevMCPFiles.resolve(path), FileManager.default.fileExists(atPath: url.path) else {
-                throw AgentError.invalid("\(path) is not a file inside \(DevMCPFiles.root.path)")
-            }
-            return url
-        }
+        let files = try (call.args.strings("files") ?? []).map(AgentUploads.source)
         guard !files.isEmpty, let item = call.session?.itemID else { throw AgentError.invalid("files is empty") }
-        let input = try await AgentRuntime.object("fileInput", ["target": target], in: webView)
-        guard let ref = input["ref"] as? String else { throw AgentError.invalid("No file input found") }
+        // No file input: the target is a drop zone.
+        let ref = (try? await AgentRuntime.object("fileInput", ["target": target], in: webView))?["ref"] as? String
         if let task = call.task, task.confirm != .never {
             var facts = AgentActionFacts(action: "upload")
             facts.host = webView.url?.host ?? ""
@@ -213,7 +208,16 @@ extension AgentToolbox {
             case .refused(let why): throw AgentError.invalid(why)
             }
         }
-        AgentHub.shared.dialogs.stage(files, for: item)
+        let staged = try await AgentUploads.stage(files)
+        guard let ref else {
+            let dropped = try await AgentRuntime.object(
+                "dropFiles", ["target": target, "files": try await AgentUploads.dropPayload(staged)], in: webView)
+            guard dropped["accepted"] as? Bool == true else {
+                throw AgentError.invalid("No file input at or inside the target, and the page did not take files dropped on it; target the input (a selector such as input[type=file]) or the drop zone itself")
+            }
+            return .json(["ok": true, "files": dropped["files"] ?? [], "dropped": true])
+        }
+        AgentHub.shared.dialogs.stage(staged, for: item)
         // Opening a file picker needs a user gesture; script from Browser Control carries one.
         _ = try await webView.callAsyncJavaScript(
             "const el = await globalThis.__harborAgent.call('resolveRef', {ref}); try { el.showPicker(); } catch { el.click(); } return true",

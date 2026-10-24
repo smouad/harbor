@@ -503,6 +503,24 @@
             if (!input) throw new Error("No file input at or inside the target; target the input itself (observe lists hidden ones only when visible, so use a selector such as input[type=file])");
             return describe(input);
         },
+        // A drop zone with no file input: the page gets the files as a person's drop would carry
+        // them. Script-made drag events are not trusted, which drop zones rarely check.
+        dropFiles: ({ target, files }) => {
+            const el = need(target);
+            const transfer = new DataTransfer();
+            for (const f of files) {
+                const bytes = Uint8Array.from(atob(f.data), c => c.charCodeAt(0));
+                transfer.items.add(new File([bytes], f.name, { type: f.type, lastModified: Date.now() }));
+            }
+            const box = el.getBoundingClientRect();
+            const at = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+            const fire = type => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: transfer, ...at }));
+            fire("dragenter");
+            fire("dragover");
+            // A page that takes the drop cancels it, so the browser does not open the file.
+            const accepted = !fire("drop");
+            return { accepted, files: [...transfer.files].map(f => f.name) };
+        },
         markdown: args => markdown(args),
         marks: ({ limit = 80 } = {}) => observe({ limit, viewportOnly: true }).elements.filter(e => !e.disabled),
         selectors: ({ target }) => selectorsFor(need(target)),

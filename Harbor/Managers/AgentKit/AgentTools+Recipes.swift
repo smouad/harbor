@@ -83,7 +83,7 @@ extension AgentToolbox {
 
     private static let recipeSave = AgentTool(
         "recipe_save",
-        "Save a recipe (replaces one with the same name): {name, description, sites, vars: {input: default}, expose, steps: [act steps; a step may add targets: [fallback selectors] and label: 'button \"Save\"' for healing]}. Steps may also be log {text} and set {name, value}. ${vars.x} reads inputs and values bound with as.",
+        "Save a recipe (replaces one with the same name): {name, description, sites, vars: {input: default}, expose, steps: [act steps; a step may add targets: [fallback selectors] and label: 'button \"Save\"' for healing]}. Control steps as in Browser Bridge: {foreach: \"${vars.list}\", as: \"item\", steps}, {when: \"vars.n > 2 && item.ok\", steps, else}, set {var, value | expr}, log {message}, goto {target: step id}, snapshot {as}, call {hook, arg, as} running a function from the recipe's hooks (JavaScript source; no page, network or timers). Any step may have id, retry {times, delayMs} and onFail: abort | continue | goto:id; defaults {retry, onFail, timeout} apply to steps without them. ${vars.x} reads inputs and values bound with as, ${input.x} the run's inputs, ${item.x} a foreach item.",
         page: .none,
         properties: ["name": ["type": "string"], "recipe": ["type": "object"]],
         required: ["recipe"]
