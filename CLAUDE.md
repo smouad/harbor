@@ -106,7 +106,7 @@ the flags on the `xcodebuild` invocation covers everything. Measured on 1.3.0: 8
 
 - **`develop`** is the development branch and the GitHub default branch. Commit and branch from here.
 - **`main`** holds the last official release. Fast-forward it from `develop` when promoting a beta.
-- **Releases**: there is no release pipeline yet. When one is added, every release needs its own `CURRENT_PROJECT_VERSION` bump, since Sparkle orders updates by build number.
+- **Releases**: `scripts/release.sh <version> [--notes <file>] [--dry-run]` builds Release, signs it, zips it, writes a Sparkle `appcast.xml` and publishes both as a GitHub Release on `smouad/harbor` (public, since Sparkle downloads without a login). Build numbers are a timestamp, so each release outranks the last. See Info.plist below for the feed.
 - **Gitflow naming.** Short-lived work goes on `feature/<name>` or `hotfix/<name>` branched from `develop` (hotfixes from `main`), merged back and deleted.
 - **One worktree per concurrent agent or task.** `git worktree add ../Harbor-<task> -b feature/<name> develop`, work there, remove it when the branch merges. Sharing the main checkout between two sessions goes wrong in ways neither session can see: the branch changes underneath you mid-task, and uncommitted files belonging to someone else sit in the tree, so a plain `git commit -a` or `git add -A` sweeps up their work. Committing from a shared tree means naming your own files explicitly, or building the commit against `develop` with a temp `GIT_INDEX_FILE` plus `git commit-tree` and `git update-ref`, which leaves HEAD and the tree untouched for whoever else is in them.
 - **A worktree does not isolate the running app.** Every build shares one bundle id, so all of them share `~/Library/Application Support/com.mouad.harbor/` (the `Tabs/*.json` files, the SwiftData store, the dev-mcp-token) and the `com.mouad.harbor` defaults domain. Two copies running at once corrupt each other's tab state. Quit the other one first (`osascript -e 'quit app "Harbor"'`), and give each worktree its own `-derivedDataPath` inside that worktree. More worktrees also means more stale `Harbor.app` bundles lying around, so confirm which binary is running before concluding a change did not work (see "I don't see my change" in Key Patterns).
@@ -347,7 +347,7 @@ The passkey entitlement (`web-browser.public-key-credential`) was requested and 
 
 **Hardened runtime exceptions live in build settings.** `RUNTIME_EXCEPTION_*` in `project.pbxproj` become `com.apple.security.cs.*` entitlements at signing, so neither entitlements file shows them; check a built product with `codesign -d --entitlements -`. Release has none. `ALLOW_JIT` is off because nothing in the app process runs JavaScript worth compiling: pages and extension backgrounds run in WebKit's own processes, which carry Apple's entitlements, and CI's final re-sign never carried it anyway (1.1.0 through 1.2.0 shipped without it). `ALLOW_DYLD_ENVIRONMENT_VARIABLES` and `DISABLE_LIBRARY_VALIDATION` are NO in Release (they let any local process inject a dylib into Harbor and take its Keychain items and TCC grants) and stay YES in Debug for the debugger and previews.
 
-**Info.plist**: Registers as URL handler for `http`/`https` (`CFBundleURLTypes`, LSHandlerRank `Owner`) plus `CFBundleDocumentTypes` for `public.html`/`public.xhtml`/`public.url` at rank `Default`, so Harbor appears in the default-browser picker. The `Owner` rank on the schemes is one of the criteria Apple checks for the macOS browser passkey entitlement; do not lower it. Allows arbitrary loads in web content and local networking. Sparkle: automatic checks are off and no feed URL or signing key is set until Harbor has its own update feed.
+**Info.plist**: Registers as URL handler for `http`/`https` (`CFBundleURLTypes`, LSHandlerRank `Owner`) plus `CFBundleDocumentTypes` for `public.html`/`public.xhtml`/`public.url` at rank `Default`, so Harbor appears in the default-browser picker. The `Owner` rank on the schemes is one of the criteria Apple checks for the macOS browser passkey entitlement; do not lower it. Allows arbitrary loads in web content and local networking. Sparkle: automatic checks are on, `SUFeedURL` is `https://github.com/smouad/harbor/releases/latest/download/appcast.xml` and `SUPublicEDKey` is the public half of an EdDSA key whose private half lives in the login keychain (back it up with `generate_keys -x`; without it no installed copy accepts another update). Releases are signed with an Apple Development certificate, enough for the maintainer's own Mac; other Macs would need a Developer ID certificate and notarization first.
 
 ## Key Patterns
 
@@ -434,7 +434,7 @@ what a build leaves behind, which is the form already on `develop`.
 
 ## CI/CD
 
-There is no CI workflow yet.
+There is no CI workflow yet. Releases are cut by hand with `scripts/release.sh`.
 
 ## User-Visible Text
 

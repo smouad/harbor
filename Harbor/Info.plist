@@ -51,7 +51,11 @@
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/smouad/harbor/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>rQbSy1s6jdu/umgmCB3ARG4aS6xmxNroBlayBdpewDw=</string>
 	<key>SUEnableDowngrade</key>
 	<false/>
 	<key>SUScheduledCheckInterval</key>
