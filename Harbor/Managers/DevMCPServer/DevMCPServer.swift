@@ -82,6 +82,20 @@ final class DevMCPServer {
         }
     }
 
+    /// Where an agent the AI Assistant starts over ACP reaches the browser, as an ACP HTTP MCP
+    /// server description. Asking for it starts the server: choosing Claude or Codex in the panel
+    /// is the person asking for an agent that can use the browser. Nil if the listener could not start.
+    func agentServerDescription(browserManager: BrowserManager) -> [String: Any]? {
+        start(browserManager: browserManager)
+        guard listener != nil, !token.isEmpty else { return nil }
+        return [
+            "type": "http",
+            "name": "harbor",
+            "url": "http://127.0.0.1:\(Self.port.rawValue)/mcp",
+            "headers": [["name": "Authorization", "value": "Bearer \(token)"]],
+        ]
+    }
+
     private static func loadOrCreateToken() throws -> String {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "Harbor", isDirectory: true)

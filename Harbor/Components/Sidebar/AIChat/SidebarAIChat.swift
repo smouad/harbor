@@ -246,7 +246,7 @@ struct SidebarAIChat: View {
 
             Divider()
 
-            if configService.activeProviderType != .appleIntelligence {
+            if configService.activeProviderType?.isACP != true {
                 Button(action: { showAddModelPopover = true }) {
                     Label("Add Model...", systemImage: "plus.circle")
                 }

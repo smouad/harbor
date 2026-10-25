@@ -70,7 +70,7 @@ struct SettingsAITab: View {
 
             // MARK: - Providers
             Section("Providers") {
-                ForEach(configService.providers.filter { $0.providerType != .appleIntelligence || AppleIntelligenceProvider.isAvailable }) { provider in
+                ForEach(configService.providers) { provider in
                     providerRow(provider)
                 }
 
@@ -115,7 +115,7 @@ struct SettingsAITab: View {
                         .font(HarborDesign.Font.secondary)
                 }
 
-                ForEach(configService.models.filter { $0.providerId != AppleIntelligenceProvider.providerId || AppleIntelligenceProvider.isAvailable }) { model in
+                ForEach(configService.models) { model in
                     HStack {
                         VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
                             Text(model.displayName)
@@ -454,7 +454,9 @@ struct SettingsAITab: View {
                         }
                     }
 
-                    Text(provider.providerType.displayName)
+                    Text(provider.providerType.isACP
+                         ? "Uses the \(provider.providerType.displayName) installed on this Mac and its sign-in, over ACP"
+                         : provider.providerType.displayName)
                         .font(HarborDesign.Font.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -689,7 +691,7 @@ struct SettingsAITab: View {
         Task {
             do {
                 switch provider.providerType {
-                case .appleIntelligence:
+                case .claudeACP, .codexACP:
                     break
                 case .gemini:
                     // The key goes in a header; in the URL it would reach logs and proxies

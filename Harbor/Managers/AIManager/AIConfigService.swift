@@ -75,7 +75,7 @@ class AIConfigService {
 
         // Migrate from UserDefaults if this is a fresh config
         migrateFromUserDefaultsIfNeeded()
-        addOnDeviceProvider()
+        addACPProviders()
         replaceUneditedSystemPrompt()
     }
 
@@ -96,7 +96,26 @@ class AIConfigService {
 
     private static func load(from url: URL) -> AIConfiguration? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(AIConfiguration.self, from: data)
+        return try? JSONDecoder().decode(AIConfiguration.self, from: droppingRemovedProviders(data))
+    }
+
+    /// Provider types Harbor no longer has. A saved config naming one would fail to decode as a
+    /// whole and lose every other provider, so their providers and models are dropped first.
+    private static let removedProviderTypes: Set<String> = ["apple_intelligence"]
+
+    private static func droppingRemovedProviders(_ data: Data) -> Data {
+        guard var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let providers = json["providers"] as? [[String: Any]] else { return data }
+        let removed = Set(providers.filter { removedProviderTypes.contains($0["providerType"] as? String ?? "") }
+            .compactMap { $0["id"] as? String })
+        guard !removed.isEmpty else { return data }
+        json["providers"] = providers.filter { !removed.contains($0["id"] as? String ?? "") }
+        json["models"] = (json["models"] as? [[String: Any]])?.filter { !removed.contains($0["providerId"] as? String ?? "") }
+        if let active = json["activeProviderId"] as? String, removed.contains(active) {
+            json["activeProviderId"] = nil
+            json["activeModelId"] = nil
+        }
+        return (try? JSONSerialization.data(withJSONObject: json)) ?? data
     }
 
     // MARK: - Provider Management
@@ -351,25 +370,26 @@ class AIConfigService {
         )
     }
 
-    // MARK: - On-Device Provider
+    // MARK: - ACP Providers
 
-    /// Lists Apple Intelligence first and makes it the active provider when nothing usable is chosen:
-    /// no provider, no model, or a provider still missing its key. A working setup is left alone.
-    private func addOnDeviceProvider() {
-        let id = AppleIntelligenceProvider.providerId
+    /// Lists Claude and Codex first, the agents already installed on the Mac (ACPClient.Preset), and
+    /// makes Claude active when nothing usable is chosen: no provider, no model, or a missing key.
+    private func addACPProviders() {
         var changed = false
-        if !config.providers.contains(where: { $0.id == id }) {
-            config.providers.insert(AIProviderConfig(id: id, displayName: AIProviderType.appleIntelligence.displayName, providerType: .appleIntelligence), at: 0)
-            changed = true
-        }
-        if !config.models.contains(where: { $0.id == AppleIntelligenceProvider.modelId }) {
-            config.models.append(AIModelConfig(id: AppleIntelligenceProvider.modelId, displayName: "On-Device", providerId: id, capabilities: AIModelCapabilities(toolCalling: true)))
-            changed = true
+        for (offset, preset) in ACPClient.Preset.all.enumerated() {
+            if !config.providers.contains(where: { $0.id == preset.providerId }) {
+                config.providers.insert(AIProviderConfig(id: preset.providerId, displayName: preset.type.displayName, providerType: preset.type), at: offset)
+                changed = true
+            }
+            if !config.models.contains(where: { $0.id == preset.modelId }) {
+                config.models.append(AIModelConfig(id: preset.modelId, displayName: "\(preset.type.displayName) (its own default)", providerId: preset.providerId, capabilities: AIModelCapabilities(toolCalling: true, streaming: true)))
+                changed = true
+            }
         }
         let usable = config.activeModelId != nil && activeProvider.map { !$0.providerType.requiresAPIKey || !$0.apiKey.isEmpty } == true
-        if !usable, AppleIntelligenceProvider.isAvailable {
-            config.activeProviderId = id
-            config.activeModelId = AppleIntelligenceProvider.modelId
+        if !usable, let claude = ACPClient.Preset.all.first {
+            config.activeProviderId = claude.providerId
+            config.activeModelId = claude.modelId
             changed = true
         }
         if changed { save() }
