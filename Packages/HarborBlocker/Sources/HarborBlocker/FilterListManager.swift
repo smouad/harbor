@@ -94,7 +94,7 @@ public final class FilterListManager {
     /// Filenames of enabled optional filter lists (persisted externally via HarborSettingsService)
     public var enabledOptionalFilterListFilenames: Set<String> = []
 
-    private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Harbor", category: "FilterListManager")
+    private nonisolated static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Harbor", category: "FilterListManager")
 
     private let cacheDir: URL
     private let etagDir: URL
@@ -308,19 +308,25 @@ public final class FilterListManager {
                 return false
             }
 
-            // Validate content before writing to disk
-            guard let content = String(data: data, encoding: .utf8) else {
+            // Decode, validate and hash the list before writing it. A list is megabytes and the scan
+            // is line by line, which held the main thread for over a second on a first launch
+            // that fetches every list, so it runs off the main actor.
+            let checked = await Task.detached(priority: .utility) { [self] () -> (valid: Bool, hash: String)? in
+                guard let content = String(data: data, encoding: .utf8) else { return nil }
+                guard validateFilterListContent(content, for: list) else { return (false, "") }
+                return (true, computeHash(content))
+            }.value
+            guard let checked else {
                 Self.log.warning("\(list.name): downloaded data is not valid UTF-8")
                 return false
             }
-
-            if !validateFilterListContent(content, for: list) {
+            guard checked.valid else {
                 Self.log.warning("\(list.name, privacy: .public): validation failed, keeping previous cached version")
                 return false
             }
 
-            // Compute hash and check for changes
-            let newHash = computeHash(content)
+            // Check for changes
+            let newHash = checked.hash
             if let previousHash = storedHash(for: list), previousHash != newHash {
                 Self.log.info("\(list.name): content hash changed from \(previousHash.prefix(16)) to \(newHash.prefix(16))")
             }
@@ -347,7 +353,7 @@ public final class FilterListManager {
 
     // MARK: - Content Validation
 
-    private func validateFilterListContent(_ content: String, for list: FilterList) -> Bool {
+    private nonisolated func validateFilterListContent(_ content: String, for list: FilterList) -> Bool {
         // Basic structural validation
         guard !content.isEmpty else { return false }
 
@@ -407,7 +413,7 @@ public final class FilterListManager {
 
     // MARK: - Hash Verification
 
-    private func computeHash(_ content: String) -> String {
+    private nonisolated func computeHash(_ content: String) -> String {
         let data = Data(content.utf8)
         let hash = SHA256.hash(data: data)
         return hash.map { String(format: "%02x", $0) }.joined()

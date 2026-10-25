@@ -39,10 +39,11 @@ struct ChromiumBrowser {
 }
 
 /// What the person chose to bring over besides tabs and spaces. Signed-in accounts and passwords
-/// start off: both are secrets, so they are brought over only when asked for.
+/// start off because they are secrets; history starts off because it is the slow part and most
+/// people start clean. Bookmarks are cheap and start on.
 struct ChromiumImportOptions: Equatable {
     var signIns = false
-    var history = true
+    var history = false
     var bookmarks = true
     var passwords = false
 
