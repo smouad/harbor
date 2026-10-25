@@ -59,9 +59,42 @@ final class ACPClient {
         var onText: (String) -> Void
         /// The tool the agent is running now, nil once it finishes.
         var onTool: (String?) -> Void
-        /// A permission request: the tool's title, its input and the agent's options. Returns the
-        /// chosen option's id, or nil to cancel.
-        var onPermission: (_ title: String, _ input: [String: Any], _ options: [[String: Any]]) async -> String?
+        /// A permission request: the tool's title, its input, whether it is one of the browser's own
+        /// tools (an MCP tool; the only MCP server an agent gets is Harbor's), and the agent's options.
+        /// Returns the chosen option's id, or nil to cancel.
+        var onPermission: (_ title: String, _ input: [String: Any], _ browserTool: Bool, _ options: [[String: Any]]) async -> String?
+        /// The session's options changed (the agent switched model, or answered a change).
+        var onOptions: ([ConfigOption]) -> Void
+    }
+
+    /// A setting the agent offers for its session, such as the model or the reasoning effort.
+    /// Category is ACP's: "model", "thought_level", "mode"…
+    struct ConfigOption: Codable, Equatable, Identifiable {
+        struct Choice: Codable, Equatable, Identifiable {
+            let value: String
+            let name: String
+            var id: String { value }
+        }
+        let id: String
+        let name: String
+        let category: String?
+        var currentValue: String
+        let choices: [Choice]
+
+        var currentName: String { choices.first { $0.value == currentValue }?.name ?? currentValue }
+
+        static func parse(_ list: Any?) -> [ConfigOption] {
+            (list as? [[String: Any]] ?? []).compactMap { raw in
+                guard let id = raw["id"] as? String, let current = raw["currentValue"] as? String else { return nil }
+                let choices = (raw["options"] as? [[String: Any]] ?? []).compactMap { option -> Choice? in
+                    guard let value = option["value"] as? String else { return nil }
+                    return Choice(value: value, name: option["name"] as? String ?? value)
+                }
+                guard !choices.isEmpty else { return nil }
+                return ConfigOption(id: id, name: raw["name"] as? String ?? id, category: raw["category"] as? String,
+                                    currentValue: current, choices: choices)
+            }
+        }
     }
 
     /// A JSON object crossing a continuation. The values are plain JSON, never shared mutably.
@@ -75,6 +108,12 @@ final class ACPClient {
     private var receiveTask: Task<Void, Never>?
     private var sessionId: String?
     private var reply = ""
+    /// Tool call titles by id: Codex's permission requests carry only the id.
+    private var toolTitles: [String: String] = [:]
+    /// The session's options, as the agent last reported them.
+    private(set) var options: [ConfigOption] = []
+    /// Whether the agent takes a system prompt in `session/new`; if not, instructions go with the first message.
+    private(set) var takesSystemPrompt = false
 
     private init(preset: Preset, transport: StdioTransport) {
         self.preset = preset
@@ -94,20 +133,40 @@ final class ACPClient {
         try transport.start()
         let client = ACPClient(preset: preset, transport: transport)
         client.startReceiving()
-        _ = try await client.request("initialize", [
+        let initialized = try await client.request("initialize", [
             "protocolVersion": 1,
             "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false],
             "clientInfo": ["name": "Harbor", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"],
         ])
+        let capabilities = initialized["agentCapabilities"] as? [String: Any]
+        client.takesSystemPrompt = (capabilities?["sessionCapabilities"] as? [String: Any])?["systemPrompt"] != nil
         return client
     }
 
     /// Opens the session this chat uses. `mcpServers` are ACP server descriptions, given to the
-    /// agent as tools it can call itself.
-    func newSession(cwd: URL, mcpServers: [[String: Any]]) async throws {
-        let result = try await request("session/new", ["cwd": cwd.path, "mcpServers": mcpServers])
+    /// agent as tools it can call itself; `systemPrompt` is appended to the agent's own when it takes one.
+    func newSession(cwd: URL, mcpServers: [[String: Any]], systemPrompt: String) async throws {
+        var params: [String: Any] = ["cwd": cwd.path, "mcpServers": mcpServers]
+        if takesSystemPrompt {
+            params["systemPrompt"] = ["mode": "append", "content": [["type": "text", "text": systemPrompt]]]
+        }
+        if preset.type == .claudeACP {
+            // A browser assistant, not a coding session: none of the person's Claude Code settings,
+            // plugins, skills or MCP servers. Loading them made every first reply ~5 s slower.
+            params["_meta"] = ["claudeCode": ["options": ["settingSources": [String](), "strictMcpConfig": true, "promptSuggestions": false]]]
+        }
+        let result = try await request("session/new", params)
         guard let id = result["sessionId"] as? String else { throw ACPError.agent("The agent did not open a session.") }
         sessionId = id
+        options = ConfigOption.parse(result["configOptions"])
+    }
+
+    /// Changes one of the session's options (model, effort…) and keeps the agent's answer.
+    func setOption(_ id: String, to value: String) async throws {
+        guard let sessionId else { throw ACPError.agent("No session.") }
+        let result = try await request("session/set_config_option", ["sessionId": sessionId, "configId": id, "value": value])
+        let updated = ConfigOption.parse(result["configOptions"])
+        if !updated.isEmpty { options = updated }
     }
 
     var hasSession: Bool { sessionId != nil }
@@ -219,7 +278,15 @@ final class ACPClient {
                 events?.onText(reply)
             }
         case "tool_call":
-            events?.onTool(update["title"] as? String ?? "tool")
+            let title = update["title"] as? String ?? "tool"
+            if let id = update["toolCallId"] as? String { toolTitles[id] = title }
+            events?.onTool(title)
+        case "config_option_update":
+            let updated = ConfigOption.parse(update["configOptions"])
+            if !updated.isEmpty {
+                options = updated
+                events?.onOptions(updated)
+            }
         case "tool_call_update":
             if let status = update["status"] as? String, status == "completed" || status == "failed" {
                 events?.onTool(nil)
@@ -234,9 +301,11 @@ final class ACPClient {
     private func answerPermission(id: Any, params: [String: Any]) async {
         let toolCall = params["toolCall"] as? [String: Any] ?? [:]
         let options = params["options"] as? [[String: Any]] ?? []
-        let title = toolCall["title"] as? String ?? "a tool"
+        let title = toolCall["title"] as? String ?? (toolCall["toolCallId"] as? String).flatMap { toolTitles[$0] } ?? "a browser tool"
         let input = toolCall["rawInput"] as? [String: Any] ?? [:]
-        let chosen = await events?.onPermission(title, input, options)
+        let meta = params["_meta"] as? [String: Any]
+        let browserTool = meta?["is_mcp_tool_approval"] as? Bool == true || title.contains("mcp__harbor__") || title.hasPrefix("mcp.harbor.")
+        let chosen = await events?.onPermission(title, input, browserTool, options)
         if let chosen {
             respond(to: id, result: ["outcome": ["outcome": "selected", "optionId": chosen]])
         } else {

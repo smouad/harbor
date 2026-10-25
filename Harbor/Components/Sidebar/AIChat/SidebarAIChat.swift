@@ -6,6 +6,7 @@
 //  AI chat panel for sidebar — view-only layer delegating to AIService
 //
 
+import HarborSettings
 import SwiftUI
 import AppKit
 import HarborDesign
@@ -123,12 +124,18 @@ struct SidebarAIChat: View {
         .onChange(of: windowState.agentDraft, initial: true) { takeAgentDraft() }
         .onAppear {
             isTextFieldFocused = true
+            aiService.prepareACP(windowState: windowState)
 
             if configService.activeProviderType == .ollama {
                 Task { await configService.fetchOllamaModels() }
             }
         }
+        .onChange(of: aiService.messages.isEmpty) { _, isEmpty in
+            // A cleared chat ended its agent session; start the next one before the next message
+            if isEmpty { aiService.prepareACP(windowState: windowState) }
+        }
         .onChange(of: configService.config.activeProviderId) { _, _ in
+            aiService.prepareACP(windowState: windowState)
             if configService.activeProviderType == .ollama {
                 Task { await configService.fetchOllamaModels() }
             }
@@ -211,15 +218,27 @@ struct SidebarAIChat: View {
     // MARK: - Model Selector
 
     private var modelSelectorMenu: some View {
-        Menu(configService.activeModel?.displayName ?? "Add Model") {
-            let models = configService.modelsForActiveProvider()
-            ForEach(models) { model in
-                Button(action: { configService.setActiveModel(model.id) }) {
-                    HStack {
-                        Text(model.displayName)
-                        if configService.config.activeModelId == model.id {
-                            Spacer()
-                            Image(systemName: "checkmark")
+        Menu {
+            // The agents on this Mac first, each with the models and effort levels it offers
+            ForEach(ACPClient.Preset.all, id: \.providerId) { preset in
+                acpAgentMenu(preset)
+            }
+
+            Divider()
+
+            // Providers with an API: pick one of their models
+            ForEach(configService.providers.filter { !$0.providerType.isACP && $0.isEnabled }) { provider in
+                Menu(provider.displayName) {
+                    let models = configService.modelsForProvider(provider.id)
+                    if models.isEmpty {
+                        Text("No models added")
+                    }
+                    ForEach(models) { model in
+                        Button {
+                            configService.setActiveProvider(provider.id)
+                            configService.setActiveModel(model.id)
+                        } label: {
+                            checkRow(model.displayName, checked: configService.config.activeProviderId == provider.id && configService.config.activeModelId == model.id)
                         }
                     }
                 }
@@ -233,13 +252,7 @@ struct SidebarAIChat: View {
                         configService.addModel(model)
                         configService.setActiveModel(model.id)
                     }) {
-                        HStack {
-                            Text(model.displayName)
-                            if configService.config.activeModelId == model.id {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                            }
-                        }
+                        checkRow(model.displayName, checked: configService.config.activeModelId == model.id)
                     }
                 }
             }
@@ -254,6 +267,13 @@ struct SidebarAIChat: View {
 
             Button(action: { showSettings() }) {
                 Label("Manage Models...", systemImage: "gearshape")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(selectorTitle)
+                if let type = configService.activeProviderType, aiService.acpStarting == type {
+                    ProgressView().controlSize(.mini)
+                }
             }
         }
         .menuStyle(.button)
@@ -286,6 +306,55 @@ struct SidebarAIChat: View {
                 }
             }
             .padding(12)
+        }
+    }
+
+    /// "Claude · Opus 5.5": the agent or provider, then its model.
+    private var selectorTitle: String {
+        guard let type = configService.activeProviderType else { return "Choose a Model" }
+        if type.isACP {
+            let model = aiService.acpOptions[type]?.first { $0.category == "model" }
+            return model.map { "\(type.displayName) · \($0.currentName)" } ?? type.displayName
+        }
+        return configService.activeModel?.displayName ?? "Add Model"
+    }
+
+    /// One agent: its models and reasoning levels once a session has reported them, else just the agent.
+    @ViewBuilder
+    private func acpAgentMenu(_ preset: ACPClient.Preset) -> some View {
+        let active = configService.activeProviderType == preset.type
+        let options = (aiService.acpOptions[preset.type] ?? []).filter { $0.category == "model" || $0.category == "thought_level" }
+        if options.isEmpty {
+            Button { chooseAgent(preset.type) } label: { checkRow(preset.type.displayName, checked: active) }
+        } else {
+            Menu {
+                Button { chooseAgent(preset.type) } label: { checkRow("Use \(preset.type.displayName)", checked: active) }
+                ForEach(options) { option in
+                    Section(option.category == "model" ? "Model" : option.name) {
+                        ForEach(option.choices) { choice in
+                            Button { chooseAgent(preset.type, option: option.id, value: choice.value) } label: {
+                                checkRow(choice.name, checked: choice.value == option.currentValue)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                checkRow(preset.type.displayName, checked: active)
+            }
+        }
+    }
+
+    private func chooseAgent(_ type: AIProviderType, option: String? = nil, value: String? = nil) {
+        Task { await aiService.selectACP(type, option: option, value: value, windowState: windowState) }
+    }
+
+    private func checkRow(_ title: String, checked: Bool) -> some View {
+        HStack {
+            Text(title)
+            if checked {
+                Spacer()
+                Image(systemName: "checkmark")
+            }
         }
     }
 

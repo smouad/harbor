@@ -252,11 +252,48 @@ class AIService {
 
     // MARK: - ACP Agents
 
+    /// Each agent's options (model, reasoning effort…) as its last session reported them, so the
+    /// composer can list them before a session runs. Kept across launches.
+    private(set) var acpOptions: [AIProviderType: [ACPClient.ConfigOption]] = AIService.loadACPOptions()
+    /// The agent whose process is starting, for the composer.
+    private(set) var acpStarting: AIProviderType?
+
     /// The agent this chat talks to and the tag its page context is wrapped in. One session per chat:
     /// the agent keeps its own history, so each turn sends only the new message and the page.
     @ObservationIgnored private var acp: ACPClient?
+    @ObservationIgnored private var acpLaunch: (type: AIProviderType, task: Task<ACPClient, Error>)?
+    /// Bumped whenever the session ends, so a launch that finishes afterwards is dropped.
+    @ObservationIgnored private var acpGeneration = 0
     @ObservationIgnored private var acpTag = ""
     @ObservationIgnored private var acpIntroPending = false
+
+    /// Starts the active agent ahead of the first message, so the person's typing time covers the
+    /// process start and the session. Called when the panel opens, the chat clears or the agent changes.
+    func prepareACP(windowState: BrowserWindowState) {
+        guard let type = configService.activeProviderType, let preset = ACPClient.Preset.of(type) else { return }
+        Task { _ = try? await acpSession(preset: preset, windowState: windowState) }
+    }
+
+    /// Makes `type` the chat's agent and, given an option, picks one of its values. The pick is
+    /// remembered per agent and applied to every later session.
+    func selectACP(_ type: AIProviderType, option: String? = nil, value: String? = nil, windowState: BrowserWindowState) async {
+        guard let preset = ACPClient.Preset.of(type) else { return }
+        if let option, let value {
+            UserDefaults.standard.set(value, forKey: Self.choiceKey(type, option))
+            if let index = acpOptions[type]?.firstIndex(where: { $0.id == option }) {
+                acpOptions[type]?[index].currentValue = value
+            }
+        }
+        if configService.activeProviderType != type {
+            configService.setActiveProvider(preset.providerId)
+        }
+        if let option, let value, let acp, acp.preset.type == type, acp.hasSession {
+            try? await acp.setOption(option, to: value)
+            store(acp.options, for: type)
+        } else {
+            prepareACP(windowState: windowState)
+        }
+    }
 
     private func sendViaACP(_ text: String, preset: ACPClient.Preset, windowState: BrowserWindowState) async {
         do {
@@ -267,9 +304,10 @@ class AIService {
                     self?.currentToolName = title
                     self?.isExecutingTools = title != nil
                 },
-                onPermission: { [weak self] title, input, options in
-                    await self?.choosePermission(title: title, input: input, options: options)
-                }
+                onPermission: { [weak self] title, input, browserTool, options in
+                    await self?.choosePermission(title: title, input: input, browserTool: browserTool, options: options)
+                },
+                onOptions: { [weak self] options in self?.store(options, for: preset.type) }
             )
             // A private window's page never goes to the agent
             let context = windowState.isIncognito ? "" : await extractPageContext(windowState: windowState, tag: acpTag)
@@ -292,31 +330,98 @@ class AIService {
         }
     }
 
-    /// The running session for this chat, or a new one: a fresh agent process, Harbor's Browser
-    /// Control server as its MCP tools, and a folder of its own as the working directory, so the
-    /// agent's file and shell tools have nothing of the person's to touch.
+    /// The running session for this chat, the one already starting, or a new one.
     private func acpSession(preset: ACPClient.Preset, windowState: BrowserWindowState) async throws -> ACPClient {
         if let acp, acp.preset.type == preset.type, acp.hasSession { return acp }
+        if let launch = acpLaunch, launch.type == preset.type { return try await launch.task.value }
         endACPSession()
+        let generation = acpGeneration
+        let isPrivate = windowState.isIncognito
+        let task = Task { @MainActor [weak self] () throws -> ACPClient in
+            guard let self else { throw CancellationError() }
+            return try await self.startACP(preset: preset, isPrivate: isPrivate, generation: generation)
+        }
+        acpLaunch = (preset.type, task)
+        acpStarting = preset.type
+        defer {
+            if generation == acpGeneration {
+                acpLaunch = nil
+                acpStarting = nil
+            }
+        }
+        return try await task.value
+    }
+
+    /// A fresh agent process with Harbor's Browser Control server as its MCP tools, a folder of its
+    /// own as the working directory (its file and shell tools have nothing of the person's to touch),
+    /// and the person's model and effort picks applied.
+    private func startACP(preset: ACPClient.Preset, isPrivate: Bool, generation: Int) async throws -> ACPClient {
         let client = try await ACPClient.launch(preset)
-        acp = client
-        acpTag = "page_context_" + UUID().uuidString.prefix(8).lowercased()
-        acpIntroPending = true
+        let tag = "page_context_" + UUID().uuidString.prefix(8).lowercased()
         var servers: [[String: Any]] = []
-        if !windowState.isIncognito, let browserManager,
+        // A private window's agent gets no browser: its tabs stay out of reach
+        if !isPrivate, let browserManager,
            let harbor = DevMCPServer.shared.agentServerDescription(browserManager: browserManager) {
             servers.append(harbor)
         }
-        try await client.newSession(cwd: try Self.agentDirectory(), mcpServers: servers)
+        try await client.newSession(cwd: try Self.agentDirectory(), mcpServers: servers, systemPrompt: Self.acpInstructions(tag: tag))
+        for option in client.options {
+            guard let wanted = UserDefaults.standard.string(forKey: Self.choiceKey(preset.type, option.id)) ?? Self.quickDefault(preset.type, option),
+                  wanted != option.currentValue, option.choices.contains(where: { $0.value == wanted }) else { continue }
+            try? await client.setOption(option.id, to: wanted)
+        }
+        guard generation == acpGeneration else {
+            client.close()
+            throw CancellationError()
+        }
+        acp = client
+        acpTag = tag
+        acpIntroPending = !client.takesSystemPrompt
+        store(client.options, for: preset.type)
         return client
     }
 
     private func endACPSession() {
+        acpGeneration += 1
+        acpLaunch = nil
+        acpStarting = nil
         acp?.close()
         acp = nil
     }
 
-    /// Sent once, ahead of the first message of a session.
+    /// Codex starts on its slowest reasoning; a browser assistant answers better fast. Only until
+    /// the person picks a level.
+    private static func quickDefault(_ type: AIProviderType, _ option: ACPClient.ConfigOption) -> String? {
+        guard type == .codexACP else { return nil }
+        switch option.category {
+        case "thought_level": return "low"
+        // Codex's default "Auto review" runs a second model over every tool call (~10 s a task);
+        // read-only keeps its shell harmless and puts the browser tools under Harbor's own approval.
+        case "mode": return "read-only"
+        default: return nil
+        }
+    }
+
+    private static func choiceKey(_ type: AIProviderType, _ option: String) -> String {
+        "ai.acp.\(type.rawValue).\(option)"
+    }
+
+    private static let optionsKey = "ai.acp.options"
+
+    private func store(_ options: [ACPClient.ConfigOption], for type: AIProviderType) {
+        guard !options.isEmpty else { return }
+        acpOptions[type] = options
+        let byType = Dictionary(uniqueKeysWithValues: acpOptions.map { ($0.key.rawValue, $0.value) })
+        if let data = try? JSONEncoder().encode(byType) { UserDefaults.standard.set(data, forKey: Self.optionsKey) }
+    }
+
+    private static func loadACPOptions() -> [AIProviderType: [ACPClient.ConfigOption]] {
+        guard let data = UserDefaults.standard.data(forKey: optionsKey),
+              let byType = try? JSONDecoder().decode([String: [ACPClient.ConfigOption]].self, from: data) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: byType.compactMap { key, value in AIProviderType(rawValue: key).map { ($0, value) } })
+    }
+
+    /// The agent's instructions: a system prompt where it takes one, else ahead of the first message.
     private static func acpInstructions(tag: String) -> String {
         """
         You are the assistant inside Harbor, the web browser the person is using right now. \
@@ -336,14 +441,23 @@ class AIService {
         return directory
     }
 
-    /// An agent's permission request, answered through the same approval dialog as Harbor's own
-    /// tools and mapped onto the options the agent offered.
-    private func choosePermission(title: String, input: [String: Any], options: [[String: Any]]) async -> String? {
+    /// An agent's permission request, mapped onto the options the agent offered. The browser's own
+    /// tools follow Settings › AI › browser tools (run, ask, or off), like the built-in chat's; anything
+    /// else goes through the approval dialog. "Always" options are taken as this session only where
+    /// the agent offers that first (Codex's "Allow for this session"), so nothing lands in the CLI's config.
+    private func choosePermission(title: String, input: [String: Any], browserTool: Bool, options: [[String: Any]]) async -> String? {
         func option(_ kinds: String...) -> String? {
             for kind in kinds {
                 if let id = options.first(where: { $0["kind"] as? String == kind })?["optionId"] as? String { return id }
             }
             return nil
+        }
+        if browserTool {
+            switch configService.browserToolsConfig.executionMode {
+            case .auto: return option("allow_always", "allow_once")
+            case .disabled: return option("reject_once", "reject_always")
+            case .askBeforeExecuting: break
+            }
         }
         if autoApprovedThisChat { return option("allow_always", "allow_once") }
         switch await requestToolApproval(toolName: title, args: input) {
