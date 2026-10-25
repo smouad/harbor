@@ -15,7 +15,10 @@ public enum AIProviderType: String, Codable, CaseIterable, Identifiable {
     case openRouter = "openrouter"
     case ollama = "ollama"
     case openAICompatible = "openai_compatible"
-    case appleIntelligence = "apple_intelligence"
+    /// Agents installed on the Mac, spoken to over the Agent Client Protocol: no API key,
+    /// they use the CLI's own sign-in and run their own tool loop.
+    case claudeACP = "claude_acp"
+    case codexACP = "codex_acp"
 
     public var id: String { rawValue }
 
@@ -25,14 +28,18 @@ public enum AIProviderType: String, Codable, CaseIterable, Identifiable {
         case .openRouter: return "OpenRouter"
         case .ollama: return "Ollama (Local)"
         case .openAICompatible: return "OpenAI Compatible"
-        case .appleIntelligence: return "Apple Intelligence"
+        case .claudeACP: return "Claude"
+        case .codexACP: return "Codex"
         }
     }
+
+    /// Spoken to over ACP rather than an HTTP API.
+    public var isACP: Bool { self == .claudeACP || self == .codexACP }
 
     public var requiresAPIKey: Bool {
         switch self {
         case .gemini, .openRouter: return true
-        case .ollama, .openAICompatible, .appleIntelligence: return false
+        case .ollama, .openAICompatible, .claudeACP, .codexACP: return false
         }
     }
 
@@ -41,7 +48,7 @@ public enum AIProviderType: String, Codable, CaseIterable, Identifiable {
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .openRouter: return "https://openrouter.ai/api/v1"
         case .ollama: return "http://localhost:11434"
-        case .openAICompatible, .appleIntelligence: return nil
+        case .openAICompatible, .claudeACP, .codexACP: return nil
         }
     }
 }

@@ -10,6 +10,7 @@
 //
 
 import HarborDesign
+import HarborSettings
 import HarborUI
 import HarborWeb
 import SwiftUI
@@ -20,7 +21,7 @@ struct OnboardingView: View {
     @EnvironmentObject var browserManager: BrowserManager
 
     private enum Stage: Int, CaseIterable {
-        case hello, importData, spaces, layout, blocking, defaultBrowser, done
+        case hello, importData, spaces, layout, blocking, agent, defaultBrowser, done
     }
 
     @State private var stage: Stage = .hello
@@ -32,6 +33,9 @@ struct OnboardingView: View {
     /// that space still has the starter grey.
     @State private var accentHex: String = SpaceAccent.defaultHex
     @State private var isAlreadyDefault = DefaultBrowserStage.isDefault
+    /// Claude and Codex found on this Mac, looked up as the flow opens; nil until known.
+    @State private var installedAgents: [ACPClient.Preset]?
+    @State private var agentChoice: AIProviderType?
 
     var body: some View {
         ZStack {
@@ -64,6 +68,11 @@ struct OnboardingView: View {
             return .handled
         }
         .onAppear(perform: refreshAccent)
+        .task {
+            let found = await ACPClient.Preset.installed()
+            installedAgents = found
+            if found.count == 1 { agentChoice = found.first?.type }
+        }
     }
 
     // MARK: - Layout
@@ -131,6 +140,7 @@ struct OnboardingView: View {
         case .spaces: SpacesStage(accentHex: $accentHex)
         case .layout: LayoutStage(accentHex: accentHex)
         case .blocking: BlockingStage(accentHex: accentHex)
+        case .agent: AgentStage(accentHex: accentHex, installed: installedAgents, choice: $agentChoice)
         case .defaultBrowser: DefaultBrowserStage(accentHex: accentHex, addressOnTop: addressOnTop)
         case .done: FinalStage(accentHex: accentHex)
         }
@@ -153,19 +163,30 @@ struct OnboardingView: View {
             if isLoading { return "Importing…" }
             return selectedBrowser.map { "Import from \($0.name)" } ?? "Import"
         case .spaces, .layout, .blocking: return "Continue"
+        case .agent:
+            guard let found = installedAgents, !found.isEmpty else { return "Continue" }
+            return agentChoice.map { "Use \($0.displayName)" } ?? "Choose an agent"
         case .defaultBrowser: return isAlreadyDefault ? "Continue" : "Make Harbor default"
         case .done: return "Start browsing"
         }
     }
 
     private var isPrimaryEnabled: Bool {
-        stage != .importData || selectedBrowser != nil
+        switch stage {
+        case .importData: return selectedBrowser != nil
+        case .agent:
+            // With both agents the person picks one; with one or none there is nothing to choose
+            guard let found = installedAgents else { return false }
+            return found.count < 2 || agentChoice != nil
+        default: return true
+        }
     }
 
     private var secondaryTitle: String? {
         switch stage {
         case .hello: return "Skip setup"
         case .importData: return "Start fresh"
+        case .agent: return installedAgents?.isEmpty == false ? "Not now" : nil
         case .defaultBrowser: return isAlreadyDefault ? nil : "Not now"
         default: return nil
         }
@@ -194,6 +215,9 @@ struct OnboardingView: View {
         case .layout:
             go(to: .blocking)
         case .blocking:
+            go(to: .agent)
+        case .agent:
+            useChosenAgent()
             go(to: .defaultBrowser)
         case .defaultBrowser:
             if isAlreadyDefault {
@@ -225,6 +249,14 @@ struct OnboardingView: View {
 
     private func go(to next: Stage) {
         withAnimation(HarborDesign.Motion.standard) { stage = next }
+    }
+
+    /// Makes the chosen agent the AI Assistant's and shows the Assistant, which is hidden until an
+    /// agent or provider is set up.
+    private func useChosenAgent() {
+        guard let choice = agentChoice, let preset = ACPClient.Preset.of(choice) else { return }
+        browserManager.aiConfigService?.setActiveProvider(preset.providerId)
+        harborSettings.showAIAssistant = true
     }
 
     private func finish() {

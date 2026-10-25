@@ -147,6 +147,7 @@ public final class TabsController {
             log.error("Tabs are read-only: \(reason, privacy: .public)")
         }
         if case .firstLaunch = loaded.outcome { save() }
+        if case .readOnly = loaded.outcome {} else { repaintAgentSpace() }
         if !loaded.migratedSpaceIDs.isEmpty {
             log.info("Merged profiles into \(self.tree.orderedSpaces.count) spaces")
         }

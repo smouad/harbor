@@ -82,6 +82,22 @@ final class DevMCPServer {
         }
     }
 
+    /// Where an agent the AI Assistant starts over ACP reaches the browser, as an ACP HTTP MCP
+    /// server description. Asking for it starts the server: choosing Claude or Codex in the panel
+    /// is the person asking for an agent that can use the browser. Nil if the listener could not start.
+    /// `ownSpace` false gives the person-space endpoint, /mcp/person: tabs open in the space the person
+    /// has open and page tools act on their current tab (see `callTool`).
+    func agentServerDescription(browserManager: BrowserManager, ownSpace: Bool) -> [String: Any]? {
+        start(browserManager: browserManager)
+        guard listener != nil, !token.isEmpty else { return nil }
+        return [
+            "type": "http",
+            "name": "harbor",
+            "url": "http://127.0.0.1:\(Self.port.rawValue)/mcp\(ownSpace ? "" : Self.personPath)",
+            "headers": [["name": "Authorization", "value": "Bearer \(token)"]],
+        ]
+    }
+
     private static func loadOrCreateToken() throws -> String {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "Harbor", isDirectory: true)
@@ -149,6 +165,7 @@ final class DevMCPServer {
             return (400, rpcError(id: NSNull(), code: -32700, message: "Parse error"))
         }
         guard let id = msg["id"] else { return (202, nil) } // notification
+        let person = req.path.hasPrefix("/mcp" + Self.personPath)
         let method = msg["method"] as? String ?? ""
         let params = msg["params"] as? [String: Any] ?? [:]
 
@@ -159,18 +176,20 @@ final class DevMCPServer {
                 "protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18",
                 "capabilities": ["tools": [:] as [String: Any]],
                 "serverInfo": ["name": "harbor-dev", "version": "1"],
-                "instructions": "Drives the running Debug build of Harbor. Page and tab tools act on the Agent space: a space in the person's window, made on first use, with the logins of the space they had open. Agent activity never changes the space they see; they open the Agent space to watch. Popups from its pages open as Agent space tabs. pick and selection use the person's active tab."
+                "instructions": person
+                    ? "Drives Harbor, the browser the person is using, in the space they have open. Page tools act on their current tab, and tabs you open join their sidebar. Open new pages in a new tab (createTab) rather than navigating away from the page they are on, unless they ask."
+                    : "Drives the running Debug build of Harbor. Page and tab tools act on the Agent space: a space in the person's window, made on first use, with the logins of the space they had open. Agent activity never changes the space they see; they open the Agent space to watch. Popups from its pages open as Agent space tabs. pick and selection use the person's active tab."
             ]
         case "ping":
             result = [:]
         case "tools/list":
-            result = ["tools": Self.toolList]
+            result = ["tools": person ? Self.toolList.filter { !AgentToolbox.needsAgentSpace($0["name"] as? String ?? "") } : Self.toolList]
         case "tools/call":
             let name = params["name"] as? String ?? ""
             let args = params["arguments"] as? [String: Any] ?? [:]
             // Counted here, not in callTool, so a call the deadline abandons stops the pulse.
             browserManager?.tabs.agentCallsInFlight += 1
-            let called = await withTimeout(Self.toolTimeout, operation: { await self.callTool(name, args) })
+            let called = await withTimeout(Self.toolTimeout, operation: { await self.callTool(name, args, person: person) })
             browserManager?.tabs.agentCallsInFlight -= 1
             guard let called else {
                 return (200, rpcError(id: id, code: -32001, message: "Tool \(name) did not answer within \(Int(Self.toolTimeout))s"))
@@ -361,7 +380,10 @@ final class DevMCPServer {
         return value == value.rounded() && abs(value) < 1e9 ? Int(value) : nil
     }
 
-    private func callTool(_ rawName: String, _ args: [String: Any]) async -> [String: Any] {
+    /// The path an agent working in the person's space connects to (AI Assistant, "own space" off).
+    private static let personPath = "/person"
+
+    private func callTool(_ rawName: String, _ args: [String: Any], person: Bool = false) async -> [String: Any] {
         // The chat's executeJavaScript evaluates an expression, so `return` (which
         // every agent writes) is a syntax error. Here it is another name for
         // `evaluate`, which runs the code as an async function body.
@@ -369,15 +391,18 @@ final class DevMCPServer {
         // Pick and selection work on what the person's window shows. The rest work in the person's
         // current tab when Settings > Developer > Your tabs is Any tab (the default, as Browser
         // Bridge does), else in the Agent space, either way through a regular window: agents never
-        // touch a private one. No window is ever opened.
+        // touch a private one. No window is ever opened. A caller on the person-space endpoint (the
+        // AI Assistant, "own space" off) always works where the person is, and is refused a private window.
         let humanTool = Self.humanTools.contains(name)
-        let forPerson = humanTool || browserManager?.tabs.settings.agentTabAccess == .always
+        let forPerson = person || humanTool || browserManager?.tabs.settings.agentTabAccess == .always
         let active = humanWindow
         guard let bm = browserManager,
-              let window = humanTool ? active : (active?.privateTree == nil ? active : bm.tabs.regularWindows.first)
+              let window = (person || humanTool) ? active : (active?.privateTree == nil ? active : bm.tabs.regularWindows.first)
         else { return text("No browser window", error: true) }
+        if person, window.privateTree != nil { return text("The person's window is private; the agent has no access to it.", error: true) }
         if let tool = AgentToolbox.tool(named: name) {
-            return await AgentToolbox.run(tool, args: args, browser: bm, window: window, budget: Self.toolTimeout - 2)
+            if person, AgentToolbox.needsAgentSpace(name) { return text("\(name) works only in the Agent space.", error: true) }
+            return await AgentToolbox.run(tool, args: args, browser: bm, window: window, budget: Self.toolTimeout - 2, personSpace: person)
         }
         // Tools that only read never create the Agent space; with none yet, it has no tabs.
         let agentSpace = forPerson ? nil

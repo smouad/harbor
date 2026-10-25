@@ -13,7 +13,7 @@ import Foundation
 extension SpaceRecord {
     static let agentIconPrefix = "harbor.agent:"
     /// Fixed accent, so folder icons and selection tint match the agent chrome.
-    public static let agentAccentHex = "#F2541B"
+    public static let agentAccentHex = "#8E8E93"
 
     public static func agentIcon(loginsFrom spaceID: UUID) -> String { agentIconPrefix + spaceID.uuidString }
 

@@ -68,9 +68,30 @@ struct SettingsAITab: View {
                 }
             }
 
+            // MARK: - Agents
+            Section {
+                Toggle(isOn: $settings.aiAgentOwnSpace) {
+                    VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                        Text("Claude and Codex Use Their Own Space")
+                            .font(HarborDesign.Font.body)
+                        Text(settings.aiAgentOwnSpace
+                             ? "They browse in the Agent space, away from your tabs. Open it from the sidebar to watch."
+                             : "They browse in the space you have open: their tabs join your sidebar and they act on the tab you are on.")
+                            .font(HarborDesign.Font.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Agents")
+            } footer: {
+                Text("Applies from the next chat.")
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
             // MARK: - Providers
             Section("Providers") {
-                ForEach(configService.providers.filter { $0.providerType != .appleIntelligence || AppleIntelligenceProvider.isAvailable }) { provider in
+                ForEach(configService.providers) { provider in
                     providerRow(provider)
                 }
 
@@ -115,7 +136,7 @@ struct SettingsAITab: View {
                         .font(HarborDesign.Font.secondary)
                 }
 
-                ForEach(configService.models.filter { $0.providerId != AppleIntelligenceProvider.providerId || AppleIntelligenceProvider.isAvailable }) { model in
+                ForEach(configService.models) { model in
                     HStack {
                         VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
                             Text(model.displayName)
@@ -454,7 +475,9 @@ struct SettingsAITab: View {
                         }
                     }
 
-                    Text(provider.providerType.displayName)
+                    Text(provider.providerType.isACP
+                         ? "Uses the \(provider.providerType.displayName) installed on this Mac and its sign-in, over ACP"
+                         : provider.providerType.displayName)
                         .font(HarborDesign.Font.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -689,7 +712,7 @@ struct SettingsAITab: View {
         Task {
             do {
                 switch provider.providerType {
-                case .appleIntelligence:
+                case .claudeACP, .codexACP:
                     break
                 case .gemini:
                     // The key goes in a header; in the URL it would reach logs and proxies
