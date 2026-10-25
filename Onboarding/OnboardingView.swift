@@ -25,6 +25,7 @@ struct OnboardingView: View {
 
     @State private var stage: Stage = .hello
     @State private var selectedBrowser: Browsers?
+    @State private var importOptions = ChromiumImportOptions()
     @State private var isLoading: Bool = false
     @State private var showSafariImportFlow: Bool = false
     /// The color the whole flow is drawn in: the first space's, or Harbor's default teal while
@@ -126,7 +127,7 @@ struct OnboardingView: View {
         let addressOnTop = harborSettings.topBarAddressView
         switch stage {
         case .hello: HelloStage(accentHex: accentHex, addressOnTop: addressOnTop)
-        case .importData: ImportStage(selectedBrowser: $selectedBrowser, accentHex: accentHex)
+        case .importData: ImportStage(selectedBrowser: $selectedBrowser, options: $importOptions, accentHex: accentHex)
         case .spaces: SpacesStage(accentHex: $accentHex)
         case .layout: LayoutStage(accentHex: accentHex)
         case .blocking: BlockingStage(accentHex: accentHex)
@@ -242,9 +243,9 @@ struct OnboardingView: View {
         Task {
             switch browser {
             case .arc:
-                await browserManager.importArcData()
+                await browserManager.importArcData(options: importOptions)
             case .dia:
-                await browserManager.importDiaData()
+                await browserManager.importDiaData(options: importOptions)
             default:
                 break
             }

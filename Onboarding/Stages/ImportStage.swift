@@ -6,6 +6,7 @@
 
 import AppKit
 import HarborDesign
+import HarborUI
 import SwiftUI
 
 enum Browsers {
@@ -32,6 +33,7 @@ enum Browsers {
 /// Browsers found on this Mac come first, as Dia lists them.
 struct ImportStage: View {
     @Binding var selectedBrowser: Browsers?
+    @Binding var options: ChromiumImportOptions
     var accentHex: String
 
     private struct Source {
@@ -52,7 +54,9 @@ struct ImportStage: View {
             title: "Bring your tabs with you",
             message: "Import from the browser you use now. Everything is read on this Mac and stays here."
         ) {
-            EmptyView()
+            if selectedBrowser == .arc || selectedBrowser == .dia {
+                optionsList
+            }
         } preview: {
             OnboardingPreviewPanel(accentHex: accentHex) {
                 VStack(spacing: HarborDesign.Spacing.md) {
@@ -63,6 +67,43 @@ struct ImportStage: View {
                 .frame(width: 340)
             }
         }
+    }
+
+    /// What to bring over besides tabs and spaces. Nothing that needs the keychain is read unless
+    /// its switch is on.
+    private var optionsList: some View {
+        VStack(alignment: .leading, spacing: HarborDesign.Spacing.sm) {
+            Text("Also bring over")
+                .font(HarborDesign.Font.body)
+                .foregroundStyle(.primary)
+            VStack(spacing: HarborDesign.Spacing.sm) {
+                optionRow("Signed-in accounts", detail: "Stay signed in to your sites. macOS asks once.", isOn: $options.signIns)
+                optionRow("History", detail: "Pages you visited", isOn: $options.history)
+                optionRow("Bookmarks", detail: "Saved pages and folders", isOn: $options.bookmarks)
+                optionRow("Passwords", detail: "Saved to a file for your password manager", isOn: $options.passwords)
+            }
+        }
+        .transition(.opacity)
+    }
+
+    private func optionRow(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: HarborDesign.Spacing.lg) {
+            VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                Text(title)
+                    .font(HarborDesign.Font.body)
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(HarborSwitchToggleStyle())
+        }
+        .padding(.horizontal, HarborDesign.Spacing.lg)
+        .padding(.vertical, HarborDesign.Spacing.md)
+        .background(HarborDesign.Radius.shape(HarborDesign.Radius.lg).fill(HarborDesign.Surface.fill))
     }
 
     private static var sortedSources: [Source] {

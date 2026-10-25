@@ -15,7 +15,7 @@ extension BrowserManager {
     /// Imports Arc's spaces in Arc's order, each with its own pinned tabs and folders, open tabs,
     /// favorites (from the space's Arc profile) and color. A space Harbor made on first launch
     /// and nobody has used yet is replaced instead of left beside them.
-    func importArcData() async {
+    func importArcData(options: ChromiumImportOptions = ChromiumImportOptions()) async {
         let result = await importManager.importArcSidebarData()
         guard let window = importWindow, let original = importSpaceID(window), !result.spaces.isEmpty else { return }
         let replaceOriginal = isUntouchedStarterSpace(original)
@@ -42,7 +42,7 @@ extension BrowserManager {
             tabs.setSpace(firstImported, in: window)
             tabs.deleteSpace(original)
         }
-        await importChromiumData(.arc, targets: profiles)
+        await importChromiumData(.arc, targets: profiles, options: options)
     }
 
     /// No favorites, nothing pinned and at most the one tab a first launch opens.
@@ -66,7 +66,7 @@ extension BrowserManager {
         }
     }
 
-    func importDiaData() async {
+    func importDiaData(options: ChromiumImportOptions = ChromiumImportOptions()) async {
         let result = await importManager.importDiaData()
         guard let window = importWindow, let spaceID = importSpaceID(window) else { return }
 
@@ -86,7 +86,7 @@ extension BrowserManager {
                 targets.append((created, profile))
             }
         }
-        await importChromiumData(.dia, targets: targets)
+        await importChromiumData(.dia, targets: targets, options: options)
     }
 
     func importSafariData(from directoryURL: URL, importBookmarks: Bool, importHistory: Bool) async {
@@ -131,22 +131,24 @@ extension BrowserManager {
 
     // MARK: - Chromium data
 
-    /// Brings each profile's accounts (its cookies), history and bookmarks into the space it became,
-    /// and saves its passwords to a CSV for the person's password manager. The keychain asks the
-    /// person before the key that unlocks cookies and passwords is read; if they decline, those two
-    /// are skipped and history and bookmarks still come over.
-    func importChromiumData(_ browser: ChromiumBrowser, targets: [(space: UUID, profile: ChromiumProfile)]) async {
+    /// Brings what the person chose into the space each profile became: its accounts (cookies),
+    /// history and bookmarks, and its passwords as a CSV for their password manager. The keychain
+    /// asks before the key that unlocks cookies and passwords is read, and not at all when neither
+    /// was chosen; if the person declines, those two are skipped and the rest still comes over.
+    func importChromiumData(
+        _ browser: ChromiumBrowser, targets: [(space: UUID, profile: ChromiumProfile)], options: ChromiumImportOptions
+    ) async {
         guard browser.isInstalled, !targets.isEmpty, let window = importWindow else { return }
         let reader = ChromiumReader(browser: browser)
-        let key = await Task.detached { reader.encryptionKey() }.value
+        let key = options.needsKey ? await Task.detached { reader.encryptionKey() }.value : nil
 
         var passwords: [ChromiumLogin] = []
         for (spaceID, profile) in targets {
             let found = await Task.detached {
-                (cookies: key.map { reader.cookies(in: profile, key: $0) } ?? [],
-                 logins: key.map { reader.logins(in: profile, key: $0) } ?? [],
-                 history: reader.history(in: profile),
-                 bookmarks: reader.bookmarks(in: profile))
+                (cookies: options.signIns ? key.map { reader.cookies(in: profile, key: $0) } ?? [] : [],
+                 logins: options.passwords ? key.map { reader.logins(in: profile, key: $0) } ?? [] : [],
+                 history: options.history ? reader.history(in: profile) : [],
+                 bookmarks: options.bookmarks ? reader.bookmarks(in: profile) : [])
             }.value
 
             if let store = tabs.profile(forSpace: spaceID)?.dataStore.httpCookieStore {

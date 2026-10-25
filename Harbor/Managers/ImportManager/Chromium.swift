@@ -38,6 +38,18 @@ struct ChromiumBrowser {
     var isInstalled: Bool { FileManager.default.fileExists(atPath: userData.path) }
 }
 
+/// What the person chose to bring over besides tabs and spaces. Passwords start off.
+struct ChromiumImportOptions: Equatable {
+    var signIns = true
+    var history = true
+    var bookmarks = true
+    var passwords = false
+
+    /// Sign-ins and passwords are encrypted with a key in the keychain, which macOS asks about.
+    /// Without either, the keychain is never touched.
+    var needsKey: Bool { signIns || passwords }
+}
+
 struct ChromiumProfile {
     /// The folder name under User Data: "Default", "Profile 1".
     let directory: String
