@@ -168,6 +168,16 @@ public struct SpaceTheme: Codable, Hashable, Sendable {
         return SpaceTheme(dots: [Dot(id: Dot.startingID, hex: accentHex, x: place.x, y: place.y)])
     }
 
+    /// A theme from imported colors, a gradient being two or three: each dot sits where its color
+    /// falls on the wheel, so the editor shows it where it would have been picked.
+    public static func imported(colors: [String], mode: Mode = .auto, grain: Double = 0.5, intensity: Double = 0.8) -> SpaceTheme {
+        let dots = colors.prefix(maxDots).map { hex -> Dot in
+            let place = wheelPosition(of: hex)
+            return Dot(hex: hex, x: place.x, y: place.y)
+        }
+        return SpaceTheme(dots: Array(dots), mode: mode, grain: grain, intensity: intensity)
+    }
+
     /// The color the rest of the chrome tints with.
     public var primaryHex: String { dots[0].hex }
 }

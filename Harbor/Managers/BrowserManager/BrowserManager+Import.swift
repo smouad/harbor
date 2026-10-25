@@ -65,6 +65,11 @@ extension BrowserManager {
             lastSpace = spaceID
             firstImported = firstImported ?? spaceID
             importLedger.add(space: spaceID)
+            // The space's look: Arc's background, gradient and all, as a Harbor theme.
+            if let background = space.background {
+                tabs.updateSpace(spaceID, name: nil, icon: nil, accentHex: nil, theme: SpaceTheme.imported(
+                    colors: background.colors, grain: background.grain ?? 0.5, intensity: background.intensity ?? 0.8))
+            }
             profiles.append((spaceID, known.first { $0.directory == space.profileDirectory }
                 ?? ChromiumProfile(directory: space.profileDirectory, name: space.title)))
             importNodes(space.unpinned.map { .tab($0) }, into: .tabs(spaceID: spaceID))

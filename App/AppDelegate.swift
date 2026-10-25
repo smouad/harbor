@@ -59,9 +59,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     // MARK: - Application Lifecycle
 
+    /// When Harbor last asked the feed whether a release is out.
+    private var lastUpdateProbe = Date.distantPast
+
+    /// Asks the update feed whether a release is out, without showing any window: if one is, Sparkle
+    /// tells the delegate and the sidebar's "New version of Harbor available" card appears. At most
+    /// every ten minutes. Sparkle's own schedule is hourly, so without this a release published
+    /// while Harbor was open went unseen for up to a day.
+    private func probeForUpdate() {
+        guard Date().timeIntervalSince(lastUpdateProbe) > 600 else { return }
+        let updater = updaterController.updater
+        guard updater.canCheckForUpdates else { return }
+        lastUpdateProbe = Date()
+        updater.checkForUpdateInformation()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        probeForUpdate()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // updaterController is lazy and starts Sparkle on first use; without this, scheduled checks never run.
         _ = updaterController
+        // Once the first window is up rather than during launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.probeForUpdate() }
         setupURLEventHandling()
         setupMouseButtonHandling()
         setupSleepWakeHandling()

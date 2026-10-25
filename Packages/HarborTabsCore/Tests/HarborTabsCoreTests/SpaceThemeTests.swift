@@ -159,4 +159,14 @@ final class SpaceThemeNeutralTests: XCTestCase {
         XCTAssertEqual(SpaceTheme.grayHex(0), "#000000")
         XCTAssertEqual(SpaceTheme.grayHex(1), "#FFFFFF")
     }
+
+    @Test func importedColorsBecomeDotsPlacedWhereTheyFallOnTheWheel() {
+        let theme = SpaceTheme.imported(colors: ["#00DF63", "#EE41BF"], grain: 0.85, intensity: 0.79)
+        #expect(theme.dots.map(\.hex) == ["#00DF63", "#EE41BF"])
+        #expect(theme.grain == 0.85 && theme.intensity == 0.79)
+        #expect(theme.offsets.count == 1)
+        #expect(theme.dots.allSatisfy { (0...1).contains($0.x) && (0...1).contains($0.y) })
+        // More than three colors keep the first three.
+        #expect(SpaceTheme.imported(colors: ["#111111", "#222222", "#333333", "#444444"]).dots.count == SpaceTheme.maxDots)
+    }
 }

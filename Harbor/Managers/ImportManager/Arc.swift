@@ -27,12 +27,22 @@ struct ArcSpace {
     let emoji: String?
     /// The space's theme color as `#RRGGBB`, when Arc has one.
     let accentHex: String?
+    /// The space's background: one color or a gradient's two or three, with Arc's grain and strength.
+    let background: ArcBackground?
     /// The favorites of the space's profile.
     let favorites: [ArcTab]
     /// Pinned tabs and folders, in Arc's order.
     let pinned: [ArcItem]
     /// Today's tabs; folders there are flattened, since Harbor's tabs section holds no folders.
     let unpinned: [ArcTab]
+}
+
+struct ArcBackground {
+    /// `#RRGGBB`, in Arc's order.
+    let colors: [String]
+    /// Arc's `noiseFactor` and `intensityFactor`, 0...1.
+    let grain: Double?
+    let intensity: Double?
 }
 
 enum ArcItem {
@@ -131,12 +141,39 @@ func parseArcSidebarData(from fileURL: URL) throws -> ArcImportResult {
             profileDirectory: profileKey(space["profile"]).map(profileDirectory) ?? "Default",
             emoji: iconType?["emoji_v2"] as? String,
             accentHex: accentHex(fromTheme: customInfo?["windowTheme"] as? [String: Any]),
+            background: background(fromTheme: customInfo?["windowTheme"] as? [String: Any]),
             favorites: flattened(entries(under: favorites)),
             pinned: entries(under: sections["pinned"]),
             unpinned: flattened(entries(under: sections["unpinned"]))
         )
     }
     return ArcImportResult(spaces: result)
+}
+
+/// A space's background as Arc draws it: `background.single._0.style.color._0` holds either a
+/// `blendedGradient` with `baseColors` or a `blendedSingleColor`, each with `modifiers` for grain
+/// and strength. Components are extended sRGB, so they can fall outside 0...1; they are clamped.
+func background(fromTheme theme: [String: Any]?) -> ArcBackground? {
+    guard let single = (theme?["background"] as? [String: Any])?["single"] as? [String: Any],
+          let color = (((single["_0"] as? [String: Any])?["style"] as? [String: Any])?["color"] as? [String: Any])?["_0"] as? [String: Any]
+    else { return nil }
+    func hex(_ value: [String: Any]) -> String? {
+        guard let red = value["red"] as? Double, let green = value["green"] as? Double, let blue = value["blue"] as? Double else { return nil }
+        func byte(_ component: Double) -> Int { Int((min(max(component, 0), 1) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+    }
+    var colors: [String] = []
+    var modifiers: [String: Any]?
+    if let gradient = (color["blendedGradient"] as? [String: Any])?["_0"] as? [String: Any] {
+        colors = (gradient["baseColors"] as? [[String: Any]] ?? []).compactMap(hex)
+        modifiers = gradient["modifiers"] as? [String: Any]
+    } else if let solid = (color["blendedSingleColor"] as? [String: Any])?["_0"] as? [String: Any] {
+        colors = (solid["color"] as? [String: Any]).flatMap(hex).map { [$0] } ?? []
+        modifiers = solid["modifiers"] as? [String: Any]
+    }
+    guard !colors.isEmpty else { return nil }
+    return ArcBackground(colors: colors, grain: modifiers?["noiseFactor"] as? Double,
+                         intensity: modifiers?["intensityFactor"] as? Double)
 }
 
 /// The profile folder a `profileKey` names.
