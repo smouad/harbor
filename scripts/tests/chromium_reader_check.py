@@ -44,8 +44,11 @@ def build(user_data: str):
     db = sqlite3.connect(f"{user_data}/Default/History")
     db.execute("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT)")
     db.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER, visit_time INTEGER)")
-    db.execute("INSERT INTO urls VALUES (1, 'https://example.com/a', 'A'), (2, 'chrome://settings', 'S'), (3, 'https://example.com/b', 'B')")
-    for i, (u, t) in enumerate([(1, 1_700_000_000), (2, 1_700_000_100), (3, 1_700_000_200)]):
+    db.execute("INSERT INTO urls VALUES (1, 'https://example.com/a', 'A'), (2, 'chrome://settings', 'S'), (3, 'https://example.com/b', 'B'), (4, 'https://old.example.com/', 'Old')")
+    import time
+    now = time.time()
+    # a: two days ago, a non-web page, b: an hour ago, and one visit a month ago that an import leaves out
+    for i, (u, t) in enumerate([(1, now - 2 * 86400), (2, now - 100), (3, now - 3600), (4, now - 30 * 86400)]):
         db.execute("INSERT INTO visits VALUES (?,?,?)", (i + 1, u, webkit_time(t)))
     db.commit(); db.close()
     # Bookmarks
@@ -76,7 +79,7 @@ def main():
     assert out["logins"][0] == {"url": "https://shop.example.com/login", "user": "me@example.com", "pass": 'p,"ss\nword'}
     assert out["csv"].splitlines()[0] == "name,url,username,password,note"
     assert '"p,""ss\nword"' in out["csv"], out["csv"]          # quoted, with doubled quotes
-    assert [h["url"] for h in out["history"]] == ["https://example.com/b", "https://example.com/a"], out["history"]
+    assert [h["url"] for h in out["history"]] == ["https://example.com/b", "https://example.com/a"], out["history"]   # newest first, web pages, last week only
     assert out["bookmarks"] == [{"folder": "Bookmarks bar", "items": [
         {"page": "Site", "url": "https://site.test/"},
         {"folder": "Reading", "items": [{"page": "Post", "url": "https://blog.test/p"}]}]}], out["bookmarks"]

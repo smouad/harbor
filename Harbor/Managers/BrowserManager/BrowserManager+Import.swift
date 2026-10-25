@@ -184,8 +184,9 @@ extension BrowserManager {
 
         if !result.history.isEmpty {
             let profileId = historyManager.currentProfileId
+            let cutoff = Date().addingTimeInterval(-Double(ChromiumReader.historyDays) * 86_400)
             historyManager.importVisits(result.history.compactMap { entry in
-                guard let url = URL(string: entry.url) else { return nil }
+                guard entry.visitDate >= cutoff, let url = URL(string: entry.url) else { return nil }
                 return HistoryVisit(url: url, title: entry.title, timestamp: entry.visitDate,
                                     tabId: nil, profileId: profileId)
             })

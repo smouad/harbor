@@ -36,7 +36,8 @@ public final class HistoryManager {
         currentProfileId = profileId
         pageText = pageTextURL.map(HistoryTextIndex.init(fileURL:))
         let container = context.container
-        // Construct the model executor off the main actor as well as calling it there.
+        // The store runs on its own queue (`HistoryStore.queue`). `@ModelActor` ran it on the main
+        // thread even when made here, so an import of ten thousand visits froze the window.
         storeTask = Task.detached { HistoryStore(modelContainer: container) }
         // Every space's rows, not only the launch space's.
         clear(days: Self.retentionDays, profile: nil)
@@ -134,8 +135,21 @@ public final class HistoryManager {
     }
 }
 
-@ModelActor
+/// History's database access. Its executor is a serial queue of its own, so none of its work, an
+/// import of thousands of visits included, runs on the main thread. (`@ModelActor`'s executor
+/// did, whichever thread made the actor; it is not used here for that reason.)
 actor HistoryStore {
+    nonisolated let queue = DispatchSerialQueue(label: "com.mouad.harbor.history", qos: .utility)
+    nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
+    nonisolated let modelContainer: ModelContainer
+    /// Used only on `queue`, which the actor's executor guarantees.
+    let modelContext: ModelContext
+
+    init(modelContainer: ModelContainer) {
+        self.modelContainer = modelContainer
+        modelContext = ModelContext(modelContainer)
+    }
+
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Harbor", category: "History")
     /// Past this age the autofill index is rebuilt, whatever it holds.
     private static let indexMaxAge: TimeInterval = 300
@@ -167,16 +181,44 @@ actor HistoryStore {
         return try modelContext.fetch(descriptor).first
     }
 
+    private struct VisitKey: Hashable {
+        let url: String
+        let profile: UUID?
+    }
+
+    /// The rows an import of `visits` can match, by address and profile, read once. Looking each
+    /// visit up with its own fetch compared it with every stored row, so ten thousand visits
+    /// took tens of seconds; a dictionary makes each lookup constant.
+    private func existingRows(for visits: [HistoryVisit]) throws -> [VisitKey: HistoryEntity] {
+        var known: [VisitKey: HistoryEntity] = [:]
+        let profiles = Set(visits.compactMap(\.profileId))
+        var rows: [HistoryEntity] = []
+        for profile in profiles {
+            rows += try modelContext.fetch(FetchDescriptor<HistoryEntity>(predicate: #Predicate { $0.profileId == profile }))
+        }
+        rows += try modelContext.fetch(FetchDescriptor<HistoryEntity>(predicate: #Predicate { $0.profileId == nil }))
+        for row in rows { known[VisitKey(url: row.url, profile: row.profileId)] = row }
+        return known
+    }
+
     func addVisits(_ visits: [HistoryVisit]) {
         let interval = BrowserPerformance.signposter.beginInterval("HistoryWrite")
         defer { BrowserPerformance.signposter.endInterval("HistoryWrite", interval) }
         modelContext.autosaveEnabled = false
         do {
+            // A single visit (browsing) takes the plain fetch; a long list (an import) the dictionary.
+            var known: [VisitKey: HistoryEntity]? = visits.count > 20 ? try existingRows(for: visits) : nil
             for (index, visit) in visits.enumerated() {
                 guard visit.url.scheme == "http" || visit.url.scheme == "https" else { continue }
                 let url = visit.url.absoluteString
-                let existing = try exactURL(url, profile: visit.profileId)
-                    ?? (visit.profileId == nil ? nil : exactURL(url, profile: nil))
+                let existing: HistoryEntity?
+                if let rows = known {
+                    existing = rows[VisitKey(url: url, profile: visit.profileId)]
+                        ?? (visit.profileId == nil ? nil : rows[VisitKey(url: url, profile: nil)])
+                } else {
+                    existing = try exactURL(url, profile: visit.profileId)
+                        ?? (visit.profileId == nil ? nil : exactURL(url, profile: nil))
+                }
                 if let entry = existing {
                     entry.visitCount += 1
                     // An import of older history must not move a recent visit backwards.
@@ -187,13 +229,16 @@ actor HistoryStore {
                     }
                     if entry.profileId == nil, visit.profileId != nil {
                         entry.profileId = visit.profileId
+                        known?[VisitKey(url: url, profile: visit.profileId)] = entry
                         // The row leaves every other profile's `visible(to:)` here, so an index
                         // built for one of those is still counting a row it can no longer see.
                         autofillCache = nil
                     }
                 } else {
-                    modelContext.insert(HistoryEntity(url: url, title: visit.title.isEmpty ? (visit.url.host ?? "Unknown") : visit.title,
-                        visitDate: visit.timestamp, tabId: visit.tabId, lastVisited: visit.timestamp, profileId: visit.profileId))
+                    let entity = HistoryEntity(url: url, title: visit.title.isEmpty ? (visit.url.host ?? "Unknown") : visit.title,
+                        visitDate: visit.timestamp, tabId: visit.tabId, lastVisited: visit.timestamp, profileId: visit.profileId)
+                    modelContext.insert(entity)
+                    known?[VisitKey(url: url, profile: visit.profileId)] = entity
                 }
                 autofillCache?.record(url: url, profile: visit.profileId, at: visit.timestamp)
                 // Bound each transaction while avoiding a disk save for every imported row.

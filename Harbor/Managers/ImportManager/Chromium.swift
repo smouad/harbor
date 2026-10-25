@@ -218,12 +218,19 @@ struct ChromiumReader {
 
     // MARK: History
 
-    /// The most recent web visits, newest first.
+    /// How far back an import reaches. Older history is left behind: it is the bulk of the rows and
+    /// the slowest part to write, and a week is what anyone wants on a new browser.
+    static let historyDays = 7
+
+    /// The most recent web visits, newest first, no older than `historyDays`.
     func history(in profile: ChromiumProfile, limit: Int = 20_000) -> [ChromiumVisit] {
         let database = browser.userData.appendingPathComponent("\(profile.directory)/History")
+        // Chromium counts microseconds from 1601.
+        let cutoff = Int64((Date().timeIntervalSince1970 - Double(Self.historyDays) * 86_400 + 11_644_473_600) * 1_000_000)
         var visits: [ChromiumVisit] = []
         Self.query(database, """
             SELECT u.url, u.title, v.visit_time FROM visits v JOIN urls u ON u.id = v.url
+            WHERE v.visit_time >= \(cutoff)
             ORDER BY v.visit_time DESC LIMIT \(limit)
             """) { row in
             let url = Self.text(row, 0)
