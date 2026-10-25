@@ -52,12 +52,21 @@ if [ "$dry_run" = 0 ]; then
     fi
 fi
 
+# macOS asks once for access to the update-signing key. Ask now, at the start, while someone is
+# watching: asked after the build it waited unseen behind other windows and the script sat there.
+# Resolving the packages first puts Sparkle's tools on disk.
+xcodebuild -resolvePackageDependencies -scheme Harbor -derivedDataPath build-release -quiet
+[ -x "$sparkle/sign_update" ] || { echo "Sparkle tools missing: $sparkle" >&2; exit 1; }
+probe=$(mktemp)
+echo harbor > "$probe"
+echo "macOS may ask to use the update-signing key: choose Always Allow."
+"$sparkle/sign_update" "$probe" >/dev/null || { rm -f "$probe"; echo "Could not read the update-signing key" >&2; exit 1; }
+rm -f "$probe"
+
 xcodebuild -scheme Harbor -configuration Release -arch arm64 -derivedDataPath build-release \
     MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
     ENABLE_CODE_COVERAGE=NO CLANG_COVERAGE_MAPPING=NO \
     CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO -quiet
-
-[ -x "$sparkle/generate_appcast" ] || { echo "Sparkle tools missing: $sparkle" >&2; exit 1; }
 
 codesign --force --deep --sign "$identity" --entitlements "$PWD/Harbor/Harbor-CI.entitlements" "$app"
 codesign --verify --deep --strict "$app"
@@ -65,18 +74,35 @@ codesign --verify --deep --strict "$app"
 shipped=$(defaults read "$PWD/$app/Contents/Info" CFBundleShortVersionString)
 [ "$shipped" = "$version" ] || { echo "Built $shipped, not $version" >&2; exit 1; }
 
-# generate_appcast reads every archive in the folder, so start from an empty one.
 rm -rf "$dist"
 mkdir -p "$dist"
 zip="Harbor-$version.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$dist/$zip"
 [ -z "$notes" ] || cp "$notes" "$dist/Harbor-$version.md"
-"$sparkle/generate_appcast" "$dist" \
-    --download-url-prefix "https://github.com/$repo/releases/download/$tag/" \
-    -o "$dist/appcast.xml"
-grep -q "sparkle:edSignature" "$dist/appcast.xml" || { echo "appcast.xml has no signature" >&2; exit 1; }
+# The feed: one item, the newest release, which is all `releases/latest/download` ever serves.
+# sign_update prints `sparkle:edSignature="..." length="..."`.
+signature=$("$sparkle/sign_update" "$dist/$zip")
+case "$signature" in *'sparkle:edSignature="'*) ;; *) echo "No signature for $zip: $signature" >&2; exit 1 ;; esac
+minimum=$(defaults read "$PWD/$app/Contents/Info" LSMinimumSystemVersion)
+cat > "$dist/appcast.xml" <<XML
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Harbor</title>
+        <item>
+            <title>$version</title>
+            <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+            <sparkle:version>$build</sparkle:version>
+            <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>$minimum</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/$repo/releases/download/$tag/$zip" type="application/octet-stream" $signature/>
+        </item>
+    </channel>
+</rss>
+XML
+xmllint --noout "$dist/appcast.xml"
 
-# Outside dist, which generate_appcast has already read; the page links this one.
+# Outside dist; the page links this one.
 dmg="build-release/dmg/Harbor-$version.dmg"
 scripts/make-dmg.sh "$app" "$dmg"
 
