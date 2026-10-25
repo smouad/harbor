@@ -84,6 +84,13 @@ final class FocusableWKWebView: WKWebView, SessionWebView {
         }
     }
 
+    /// A pinch on a page that wants it (a Peek card) goes to the page's handler; anywhere else it
+    /// falls through to WebKit as before.
+    override func magnify(with event: NSEvent) {
+        guard let handler = owningSession?.onMagnify else { return super.magnify(with: event) }
+        handler(Double(event.magnification), event.phase.contains(.ended) || event.phase.contains(.cancelled))
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         owningSession?.activate()
         // Ensure this webview becomes first responder so willOpenMenu gets called

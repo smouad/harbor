@@ -38,9 +38,10 @@ struct ChromiumBrowser {
     var isInstalled: Bool { FileManager.default.fileExists(atPath: userData.path) }
 }
 
-/// What the person chose to bring over besides tabs and spaces. Passwords start off.
+/// What the person chose to bring over besides tabs and spaces. Signed-in accounts and passwords
+/// start off: both are secrets, so they are brought over only when asked for.
 struct ChromiumImportOptions: Equatable {
-    var signIns = true
+    var signIns = false
     var history = true
     var bookmarks = true
     var passwords = false

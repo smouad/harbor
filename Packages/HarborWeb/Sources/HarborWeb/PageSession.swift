@@ -244,6 +244,10 @@ public final class PageSession: NSObject, Identifiable {
     /// A small picture of the page as it last looked, as JPEG, for the recent-tabs switcher. Taken
     /// when the tab is left and when the switcher opens, and kept after an unload.
     public internal(set) var thumbnail: Data?
+    /// Called for each pinch on the page with its change in magnification and whether the gesture
+    /// ended. Set by Peek, which opens the page as a tab on a pinch out and closes on a pinch in;
+    /// while nil, a pinch does what it always did.
+    @ObservationIgnored public var onMagnify: ((Double, Bool) -> Void)?
     /// Set by whatever shows `unloadSnapshot`; called once, when the snapshot goes.
     @ObservationIgnored public var onUnloadSnapshotReleased: (() -> Void)?
 

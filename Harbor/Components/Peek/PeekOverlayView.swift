@@ -74,11 +74,14 @@ struct PeekOverlayView: View {
                 }
             }
             .frame(width: frame.width, height: frame.height)
-            // The buttons sit in the margin left of the card, level with its top.
-            .overlay(alignment: .topLeading) {
+            // The buttons sit in the margin right of the card, level with its top, as in Arc.
+            .overlay(alignment: .topTrailing) {
                 actionButtons
-                    .alignmentGuide(.leading) { $0[.trailing] + HarborDesign.Spacing.lg }
+                    .alignmentGuide(.trailing) { $0[.leading] - HarborDesign.Spacing.lg }
             }
+            // A pinch resizes the card while the fingers are down: out opens it as a tab, in closes it.
+            .scaleEffect(1 + min(max(peek.pinch, -0.3), 0.12))
+            .animation(HarborDesign.Motion.quick, value: peek.pinch)
             .position(
                 x: frame.minX + (frame.width / 2),
                 y: geometry.size.height / 2
@@ -86,24 +89,28 @@ struct PeekOverlayView: View {
         }
     }
 
-    /// Close, split and new tab: standalone icon buttons on one floating card, readable over any page.
+    /// Close, open as a tab, and split: round dark buttons in a column, readable over any page.
     private var actionButtons: some View {
-        VStack(spacing: HarborDesign.Spacing.xxs) {
-            Button(action: { peek.dismissPeek() }) {
-                Image(systemName: "xmark")
-            }
+        VStack(spacing: HarborDesign.Spacing.md) {
+            circleButton("xmark") { peek.dismissPeek() }
+            circleButton("arrow.up.left.and.arrow.down.right") { peek.moveToNewTab() }
             // Disabled while the window is already split.
-            Button(action: { peek.moveToSplitView() }) {
-                Image(systemName: "square.split.2x1")
-            }
-            .disabled(!peek.canEnterSplitView)
-            Button(action: { peek.moveToNewTab() }) {
-                Image(systemName: "plus.square.on.square")
-            }
+            circleButton("square.split.2x1") { peek.moveToSplitView() }
+                .disabled(!peek.canEnterSplitView)
         }
-        .harborIconButtons()
-        .padding(HarborDesign.Spacing.xxs)
-        .harborFloatingSurface(in: HarborDesign.Radius.shape(HarborDesign.Radius.md))
+    }
+
+    private func circleButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(HarborDesign.Font.secondary.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: HarborDesign.Size.peekButton, height: HarborDesign.Size.peekButton)
+                .background(Circle().fill(Color.black.opacity(0.85)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .harborElevation(.raised)
     }
 
 

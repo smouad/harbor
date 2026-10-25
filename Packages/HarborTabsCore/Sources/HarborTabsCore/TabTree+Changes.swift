@@ -32,6 +32,43 @@ extension TabTree {
         return change
     }
 
+    /// A tab or folder to add in a batch.
+    public enum NewItem {
+        case tab(id: UUID, url: URL, title: String)
+        case folder(id: UUID, title: String)
+    }
+
+    /// Adds `new` at the top of `parent`, in order, in one pass. `createTab` finds and sorts the
+    /// parent's siblings for every tab it adds, which scans the whole tree each time, so adding
+    /// hundreds of tabs that way (an import) took seconds. Here the siblings are read once and the
+    /// whole level is numbered together; the existing siblings follow the new ones.
+    @discardableResult
+    public mutating func createBatch(_ new: [NewItem], in parent: Parent, now: Date = Date()) throws -> Change {
+        var change = Change()
+        guard !new.isEmpty else { return change }
+        let hasFolder = new.contains { if case .folder = $0 { return true } else { return false } }
+        try validate(parent: parent, placing: nil, isFolder: hasFolder)
+        let existing = children(of: parent)
+        let keys = OrderKey.sequence(count: new.count + existing.count)
+        for (index, entry) in new.enumerated() {
+            switch entry {
+            case .tab(let id, let url, let title):
+                record(&change, item: Item(id: id, parent: parent, order: keys[index],
+                                           kind: .tab(url: url, pageTitle: title), modifiedAt: now))
+            case .folder(let id, let title):
+                record(&change, item: Item(id: id, parent: parent, order: keys[index], kind: .folder,
+                                           customTitle: title, modifiedAt: now))
+            }
+        }
+        for (index, sibling) in existing.enumerated() {
+            var renumbered = sibling
+            renumbered.order = keys[new.count + index]
+            renumbered.modifiedAt = now
+            record(&change, item: renumbered)
+        }
+        return change
+    }
+
     @discardableResult
     public mutating func createFolder(id: UUID = UUID(), title: String, in parent: Parent, after: UUID?, live: LiveSource? = nil, now: Date = Date()) throws -> Change {
         try validate(parent: parent, placing: nil, isFolder: true)

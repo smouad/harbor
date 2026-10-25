@@ -67,9 +67,9 @@ extension BrowserManager {
             importLedger.add(space: spaceID)
             profiles.append((spaceID, known.first { $0.directory == space.profileDirectory }
                 ?? ChromiumProfile(directory: space.profileDirectory, name: space.title)))
-            importTabs(space.unpinned.map(\.url), into: .tabs(spaceID: spaceID), window: window)
-            importItems(space.pinned, into: .pinned(spaceID: spaceID), window: window)
-            importTabs(space.favorites.map(\.url), into: .favorites(spaceID: spaceID), window: window)
+            importNodes(space.unpinned.map { .tab($0) }, into: .tabs(spaceID: spaceID))
+            importNodes(space.pinned, into: .pinned(spaceID: spaceID))
+            importNodes(space.favorites.map { .tab($0) }, into: .favorites(spaceID: spaceID))
         }
 
         if replaceOriginal, let firstImported {
@@ -101,19 +101,19 @@ extension BrowserManager {
             && tabs.children(of: .tabs(spaceID: spaceID)).count <= 1
     }
 
-    /// Tabs and folders in source order. Every insert lands at the top of `parent`, so the
-    /// list goes in reversed, folders filled as they are made.
-    private func importItems(_ items: [ArcItem], into parent: Parent, window: BrowserWindowState) {
-        for item in items.reversed() {
+    /// Adds Arc-shaped items under `parent` as one edit, folders closed, and records them so a
+    /// second import can replace them. A tab with no usable address is left out.
+    private func importNodes(_ items: [ArcItem], into parent: Parent) {
+        func node(_ item: ArcItem) -> ImportedNode? {
             switch item {
             case .tab(let tab):
-                importTabs([tab.url], into: parent, window: window)
+                guard let url = URL(string: tab.url), url.scheme != nil else { return nil }
+                return .tab(title: tab.title.isEmpty ? (url.host ?? tab.url) : tab.title, url: url)
             case .folder(let folder):
-                guard let folderID = tabs.createFolder(title: folder.title, in: parent, after: nil, open: false) else { continue }
-                importLedger.add(item: folderID)
-                importItems(folder.items, into: .folder(itemID: folderID), window: window)
+                return .folder(title: folder.title, children: folder.items.compactMap(node))
             }
         }
+        for id in tabs.importNodes(items.compactMap(node), into: parent) { importLedger.add(item: id) }
     }
 
     func importDiaData(options: ChromiumImportOptions = ChromiumImportOptions()) async {
@@ -125,8 +125,8 @@ extension BrowserManager {
             ? (tabs.orderedSpaces.first { !previous.spaces.contains($0.id) && $0.id != tabs.agentSpaceID }?.id ?? current)
             : current
 
-        importTabs(result.favoriteTabs.map(\.url), into: .favorites(spaceID: spaceID), window: window)
-        importTabs(result.windowTabs.map(\.url), into: .tabs(spaceID: spaceID), window: window)
+        importNodes(result.favoriteTabs.map { .tab(ArcTab(title: $0.title, url: $0.url)) }, into: .favorites(spaceID: spaceID))
+        importNodes(result.windowTabs.map { .tab(ArcTab(title: $0.title, url: $0.url)) }, into: .tabs(spaceID: spaceID))
 
         // Dia's first profile goes into this space. Each other profile is its own sign-in context,
         // as an Arc space is, so it becomes a space of its own.
@@ -163,7 +163,8 @@ extension BrowserManager {
             let favoritesBookmarks = result.bookmarks.filter { $0.folder == "Favorites" }
             let otherBookmarks = result.bookmarks.filter { $0.folder != "Favorites" }
 
-            importTabs(favoritesBookmarks.map(\.url), into: .favorites(spaceID: spaceID), window: window)
+            func tab(_ bookmark: SafariBookmark) -> ArcItem { .tab(ArcTab(title: bookmark.title, url: bookmark.url)) }
+            importNodes(favoritesBookmarks.map(tab), into: .favorites(spaceID: spaceID))
 
             var folderGroups: [String: [SafariBookmark]] = [:]
             var unfolderedBookmarks: [SafariBookmark] = []
@@ -175,11 +176,10 @@ extension BrowserManager {
                 }
             }
 
-            importTabs(unfolderedBookmarks.map(\.url), into: .tabs(spaceID: spaceID), window: window)
-            for (folderName, bookmarks) in folderGroups.sorted(by: { $0.key > $1.key }) {
-                guard let folderID = tabs.createFolder(title: folderName, in: .pinned(spaceID: spaceID), after: nil, open: false) else { continue }
-                importTabs(bookmarks.map(\.url), into: .folder(itemID: folderID), window: window)
-            }
+            importNodes(unfolderedBookmarks.map(tab), into: .tabs(spaceID: spaceID))
+            importNodes(folderGroups.sorted(by: { $0.key < $1.key }).map { name, bookmarks in
+                .folder(ArcFolder(title: name, items: bookmarks.map(tab)))
+            }, into: .pinned(spaceID: spaceID))
         }
 
         if !result.history.isEmpty {
@@ -214,8 +214,10 @@ extension BrowserManager {
                  bookmarks: options.bookmarks ? reader.bookmarks(in: profile) : [])
             }.value
 
-            if let store = tabs.profile(forSpace: spaceID)?.dataStore.httpCookieStore {
-                for cookie in found.cookies { await store.setCookie(cookie) }
+            if let store = tabs.profile(forSpace: spaceID)?.dataStore.httpCookieStore, let last = found.cookies.last {
+                // WebKit takes them in order, so waiting on the last one waits on all.
+                for cookie in found.cookies.dropLast() { store.setCookie(cookie, completionHandler: nil) }
+                await store.setCookie(last)
             }
             historyManager.importVisits(found.history.compactMap { visit in
                 URL(string: visit.url).map {
@@ -229,7 +231,7 @@ extension BrowserManager {
                     case .folder(let title, let items): return .folder(ArcFolder(title: title, items: items.map(item)))
                     }
                 }
-                importItems(found.bookmarks.map(item), into: .pinned(spaceID: spaceID), window: window)
+                importNodes(found.bookmarks.map(item), into: .pinned(spaceID: spaceID))
             }
             passwords += found.logins
         }
@@ -267,16 +269,5 @@ extension BrowserManager {
 
     private func importSpaceID(_ window: BrowserWindowState) -> UUID? {
         window.spaceID ?? tabs.orderedSpaces.first?.id
-    }
-
-    /// Adds tabs under `parent` in source order without loading pages or changing selection.
-    /// `open` inserts at the top, so the list goes in reversed.
-    private func importTabs(_ urls: [String], into parent: Parent, window: BrowserWindowState) {
-        for string in urls.reversed() {
-            guard let url = URL(string: string), url.scheme != nil else { continue }
-            if let id = tabs.open(url: url, in: window, placement: .background, parent: parent) {
-                importLedger.add(item: id)
-            }
-        }
     }
 }

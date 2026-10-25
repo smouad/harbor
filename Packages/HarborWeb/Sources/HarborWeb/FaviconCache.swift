@@ -109,8 +109,33 @@ public final class FaviconCache: @unchecked Sendable {
         return image
     }
 
+    /// Holds a slot while a site is asked for its icon: a sidebar full of imported tabs would
+    /// otherwise start hundreds of requests and page parses at once.
+    private actor FetchSlots {
+        private var free = 4
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+
+        func acquire() async {
+            if free > 0 { free -= 1; return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+
+        func release() {
+            if waiting.isEmpty { free += 1 } else { waiting.removeFirst().resume() }
+        }
+    }
+
+    private static let slots = FetchSlots()
+
     /// The page's own icon through its <link> tags, else `/favicon.ico`.
     private static func download(host: String) async -> PlatformImage? {
+        await slots.acquire()
+        let image = await fetchIcon(host: host)
+        await slots.release()
+        return image
+    }
+
+    private static func fetchIcon(host: String) async -> PlatformImage? {
         guard let root = URL(string: "https://\(host)/") else { return nil }
         if let favicon = try? await FaviconFinder(url: root).fetchFaviconURLs().download().largest(),
            let image = favicon.image?.image {

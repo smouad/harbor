@@ -75,6 +75,7 @@ public enum HarborDesign {
         public static let iconButton: CGFloat = 28
         public static let favicon: CGFloat = 16
         public static let essentialsTile: CGFloat = 46  // Arc's favorite tile: four of them fit a 228pt sidebar
+        public static let peekButton: CGFloat = 40  // the round buttons beside a Peek card, as Arc draws them
         public static let essentialsFavicon: CGFloat = 16  // as big as a row's icon; Arc's are no larger
         public static let navRow: CGFloat = 28
         #if os(iOS)
