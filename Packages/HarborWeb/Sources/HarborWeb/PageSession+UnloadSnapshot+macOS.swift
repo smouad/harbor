@@ -28,5 +28,23 @@ extension PageSession {
         guard CGImageDestinationFinalize(destination) else { return }
         unloadSnapshot = data as Data
     }
+
+    /// Starts a snapshot of the page into `thumbnail`. The request goes to WebKit before this
+    /// returns, so calling it as a tab is left still captures the page that is on screen.
+    public func captureThumbnail() {
+        guard let webView = primaryWebView, webView.window != nil,
+              webView.bounds.width > 0, webView.bounds.height > 0 else { return }
+        let config = WKSnapshotConfiguration()
+        // Points; the image comes back at the backing scale, so about 480 px wide on a 2x display.
+        config.snapshotWidth = NSNumber(value: 240)
+        webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let self, let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            let data = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { return }
+            CGImageDestinationAddImage(destination, cgImage, [kCGImageDestinationLossyCompressionQuality: 0.6] as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else { return }
+            Task { @MainActor in self.thumbnail = data as Data }
+        }
+    }
 }
 #endif

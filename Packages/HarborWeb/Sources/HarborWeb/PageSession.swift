@@ -241,6 +241,9 @@ public final class PageSession: NSObject, Identifiable {
     /// over the next view until that view draws, so going back to the tab reads as instant
     /// while it reloads. Safari keeps the same kind of snapshot for its unloaded tabs.
     @ObservationIgnored public internal(set) var unloadSnapshot: Data?
+    /// A small picture of the page as it last looked, as JPEG, for the recent-tabs switcher. Taken
+    /// when the tab is left and when the switcher opens, and kept after an unload.
+    public internal(set) var thumbnail: Data?
     /// Set by whatever shows `unloadSnapshot`; called once, when the snapshot goes.
     @ObservationIgnored public var onUnloadSnapshotReleased: (() -> Void)?
 

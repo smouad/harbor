@@ -192,6 +192,8 @@ extension TabsController {
             toggleFolder(itemID)
             return
         }
+        // The page being left is still on screen: take its picture for the recent-tabs switcher.
+        if let previous, previous.itemID != itemID, !previous.isPrivate { previous.captureThumbnail() }
         // An agent tab never pulls a window into the Agent space; the person opens it to watch.
         if isInAgentSpace(itemID) {
             guard window.spaceID == agentSpaceID else { return selectForAgent(itemID) }

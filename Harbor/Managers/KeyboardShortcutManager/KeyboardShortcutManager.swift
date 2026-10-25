@@ -315,6 +315,9 @@ class KeyboardShortcutManager {
         }
         let items = tabs.recentItems(in: window)
         guard items.count > 1 else { return }
+        if let current = window.selectedItemID, let session = tabs.session(for: current), !session.isPrivate {
+            session.captureThumbnail()
+        }
         window.tabSwitcher = BrowserWindowState.TabSwitcher(items: items, index: step > 0 ? 1 : items.count - 1)
     }
 
