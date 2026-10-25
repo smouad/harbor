@@ -13,26 +13,38 @@ import WebKit
 
 /// What each browser's import added, so importing the same browser again replaces it instead of
 /// adding to it. Going back in onboarding and importing a second time used to double every space.
-/// In memory only: it covers the one setup session.
+/// Kept on disk until setup finishes: quitting in the middle of setup and starting it again must
+/// still find what the first run imported.
 @MainActor
 final class ImportLedger {
-    struct Entry {
+    struct Entry: Codable {
         var spaces: [UUID] = []
         var items: [UUID] = []
     }
 
-    private var entries: [String: Entry] = [:]
+    private static let key = "importLedger"
+    private let defaults: UserDefaults
+    private var entries: [String: Entry]
     private var recording: String?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        entries = defaults.data(forKey: Self.key).flatMap { try? JSONDecoder().decode([String: Entry].self, from: $0) } ?? [:]
+    }
 
     /// Starts recording `browser`'s import and returns what its last import added.
     func begin(_ browser: String) -> Entry {
         recording = browser
         let previous = entries[browser] ?? Entry()
         entries[browser] = Entry()
+        save()
         return previous
     }
 
-    func end() { recording = nil }
+    func end() {
+        recording = nil
+        save()
+    }
 
     func add(space: UUID) {
         if let recording { entries[recording, default: Entry()].spaces.append(space) }
@@ -40,6 +52,17 @@ final class ImportLedger {
 
     func add(item: UUID) {
         if let recording { entries[recording, default: Entry()].items.append(item) }
+    }
+
+    /// Setup is over: what was imported is the person's now, and a later import adds to it.
+    func reset() {
+        entries = [:]
+        recording = nil
+        defaults.removeObject(forKey: Self.key)
+    }
+
+    private func save() {
+        defaults.set(try? JSONEncoder().encode(entries), forKey: Self.key)
     }
 }
 

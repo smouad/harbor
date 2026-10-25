@@ -260,6 +260,7 @@ struct OnboardingView: View {
     }
 
     private func finish() {
+        browserManager.importLedger.reset()
         harborSettings.didFinishOnboarding = true
     }
 
