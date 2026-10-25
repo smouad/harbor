@@ -168,12 +168,12 @@ public enum HarborDesign {
         /// The neutral accent a private window's chrome uses in place of a space's. Keep in step
         /// with `SpaceGradient.incognito`, which is the persisted form of the same color.
         public static let incognitoAccent = Color(hex: "#8E8E93")
-        /// The Agent space's fixed identity, amber to magenta: its chrome, switcher icon, and the
-        /// frame around its pages. No space accent comes close, so it never reads as a user space.
+        /// The Agent space's fixed identity, a quiet neutral gray: its chrome, switcher icon, and the
+        /// frame around its pages. Keep in step with `SpaceRecord.agentAccentHex`.
         public static let agentGradient = LinearGradient(
-            colors: [Color(hex: "#FFB000"), Color(hex: "#FF5A1F"), Color(hex: "#E5177E")],
+            colors: [Color(hex: "#A1A1A6"), Color(hex: "#8E8E93"), Color(hex: "#6E6E73")],
             startPoint: .topLeading, endPoint: .bottomTrailing)
-        public static let agentChromeOpacity: Double = 0.45   // over the sidebar's own background
+        public static let agentChromeOpacity: Double = 0.25   // over the sidebar's own background
         public static let agentFrameWidth: CGFloat = 3        // frame around the Agent space's page
         public static let grainOpacity: Double = 0.07         // film grain over the window chrome (HarborGrain)
 

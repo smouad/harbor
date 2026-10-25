@@ -33,6 +33,7 @@ public final class HarborSettingsService {
     private let geminiModelKey = "settings.geminiModel"
     private let showAIAssistantKey = "settings.showAIAssistant"
     private let browserControlServerKey = "settings.browserControlServer"
+    private let aiAgentOwnSpaceKey = "settings.aiAgentOwnSpace"
     private let developerModeKey = "settings.developerMode"
     private let aiProviderKey = "settings.aiProvider"
     private let openRouterApiKeyKey = "settings.openRouterApiKey"
@@ -263,6 +264,14 @@ public final class HarborSettingsService {
         }
     }
 
+    /// Where Claude and Codex in the AI Assistant browse: their own Agent space (on), or the
+    /// person's current space and tab (off), so their tabs open in the person's sidebar.
+    public var aiAgentOwnSpace: Bool {
+        didSet {
+            userDefaults.set(aiAgentOwnSpace, forKey: aiAgentOwnSpaceKey)
+        }
+    }
+
     /// Gates every developer tool: capture scripts, the DevPanel tabs and Browser Control.
     public var developerModeEnabled: Bool {
         didSet {
@@ -475,6 +484,7 @@ public final class HarborSettingsService {
             geminiModelKey: GeminiModel.flash.rawValue,
             showAIAssistantKey: false,
             browserControlServerKey: false,
+            aiAgentOwnSpaceKey: true,
             aiProviderKey: AIProvider.gemini.rawValue,
             openRouterModelKey: OpenRouterModel.gpt4o.rawValue,
             ollamaEndpointKey: "http://localhost:11434",
@@ -574,6 +584,7 @@ public final class HarborSettingsService {
         self.geminiApiKey = ""  // In-memory only; persistent storage via AIKeychainStorage
         self.geminiModel = GeminiModel(rawValue: userDefaults.string(forKey: geminiModelKey) ?? GeminiModel.flash.rawValue) ?? .flash
         self.showAIAssistant = userDefaults.bool(forKey: showAIAssistantKey)
+        self.aiAgentOwnSpace = userDefaults.bool(forKey: aiAgentOwnSpaceKey)
         let browserControlOn = userDefaults.bool(forKey: browserControlServerKey)
         self.browserControlServerEnabled = browserControlOn
         // Browser Control predates Developer Mode, so anyone who had it on keeps it reachable.

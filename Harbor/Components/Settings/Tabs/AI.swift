@@ -68,6 +68,27 @@ struct SettingsAITab: View {
                 }
             }
 
+            // MARK: - Agents
+            Section {
+                Toggle(isOn: $settings.aiAgentOwnSpace) {
+                    VStack(alignment: .leading, spacing: HarborDesign.Spacing.xxs) {
+                        Text("Claude and Codex Use Their Own Space")
+                            .font(HarborDesign.Font.body)
+                        Text(settings.aiAgentOwnSpace
+                             ? "They browse in the Agent space, away from your tabs. Open it from the sidebar to watch."
+                             : "They browse in the space you have open: their tabs join your sidebar and they act on the tab you are on.")
+                            .font(HarborDesign.Font.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Agents")
+            } footer: {
+                Text("Applies from the next chat.")
+                    .font(HarborDesign.Font.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
             // MARK: - Providers
             Section("Providers") {
                 ForEach(configService.providers) { provider in

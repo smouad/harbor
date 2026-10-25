@@ -231,8 +231,10 @@ enum AgentToolbox {
     }
 
     /// Resolves the tool's page and task, runs it, and logs it to the task's replay.
+    /// `personSpace`: the caller works in the person's own space (an AI Assistant agent with "own
+    /// space" off), so page tools act on their current tab instead of the Agent space's.
     static func run(_ tool: AgentTool, args raw: [String: Any], browser: BrowserManager,
-                    window: BrowserWindowState, budget: TimeInterval) async -> [String: Any] {
+                    window: BrowserWindowState, budget: TimeInterval, personSpace: Bool = false) async -> [String: Any] {
         let args = AgentArgs(raw)
         let name = tool.definition.name
         let started = Date()
@@ -249,7 +251,7 @@ enum AgentToolbox {
             }
             let task = tool.page == .agent ? named : nil
             let session: PageSession?
-            (session, webView) = try page(for: tool.page, task: task, browser: browser, window: window)
+            (session, webView) = try page(for: tool.page, task: task, browser: browser, window: window, personSpace: personSpace)
             let call = AgentCall(name: name, args: args, browser: browser, window: window,
                                  task: task, session: session, webView: webView, budget: budget)
             result = try await tool.run(call)
@@ -281,11 +283,25 @@ enum AgentToolbox {
         return "That tab belongs to task \(owner.id) (\(owner.title))\(ended).\(pass) Open another tab with createTab."
     }
 
+    /// Tools that always work in Agent space tabs of their own (tasks, jobs, recipes, schedules),
+    /// so a caller in the person's space is not offered them.
+    static func needsAgentSpace(_ name: String) -> Bool {
+        ["task_", "job", "recipe", "schedules", "watches"].contains { name.hasPrefix($0) }
+    }
+
     private static func page(for page: AgentTool.Page, task: AgentTask?, browser: BrowserManager,
-                             window: BrowserWindowState) throws -> (PageSession?, WKWebView?) {
+                             window: BrowserWindowState, personSpace: Bool) throws -> (PageSession?, WKWebView?) {
         switch page {
         case .none:
             return (nil, nil)
+        case .agent where personSpace && task == nil:
+            guard let session = browser.tabs.controllableSession(in: window) else {
+                throw AgentError.invalid("No tab is open in the person's space. Open one with createTab.")
+            }
+            session.loadWebViewIfNeeded()
+            let view = window.selectedItemID.flatMap { browser.getWebView(for: $0, in: window.id) } ?? session.webView
+            guard let view else { throw AgentError.noPage }
+            return (session, view)
         case .agent:
             if let task {
                 let view = try browser.agentWebView(item: task.itemID)

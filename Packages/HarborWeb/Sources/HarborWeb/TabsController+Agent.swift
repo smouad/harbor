@@ -31,6 +31,15 @@ extension TabsController {
         return made
     }
 
+    /// An Agent space keeps the accent it was made with; one made before the accent changed is
+    /// brought to the current one at launch.
+    func repaintAgentSpace() {
+        guard let agent = tree.agentSpace, agent.accentHex != SpaceRecord.agentAccentHex else { return }
+        _ = perform(.main, "agentAccent", undoable: false) { tree in
+            try tree.updateSpace(agent.id, accentHex: SpaceRecord.agentAccentHex)
+        }
+    }
+
     /// The tab the agent works in: its last pick while it is still in the Agent space, else the
     /// space's first tab.
     public var agentItem: UUID? {

@@ -361,7 +361,8 @@ class AIService {
         var servers: [[String: Any]] = []
         // A private window's agent gets no browser: its tabs stay out of reach
         if !isPrivate, let browserManager,
-           let harbor = DevMCPServer.shared.agentServerDescription(browserManager: browserManager) {
+           let harbor = DevMCPServer.shared.agentServerDescription(browserManager: browserManager,
+                                                                   ownSpace: browserManager.harborSettings?.aiAgentOwnSpace ?? true) {
             servers.append(harbor)
         }
         try await client.newSession(cwd: try Self.agentDirectory(), mcpServers: servers, systemPrompt: Self.acpInstructions(tag: tag))
