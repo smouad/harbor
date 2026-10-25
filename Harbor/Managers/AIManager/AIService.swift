@@ -390,12 +390,12 @@ class AIService {
         acp = nil
     }
 
-    /// Codex starts on its slowest reasoning; a browser assistant answers better fast. Only until
-    /// the person picks a level.
+    /// Harbor's defaults for an agent, until the person picks: Codex on 6 Luna at max reasoning.
     private static func quickDefault(_ type: AIProviderType, _ option: ACPClient.ConfigOption) -> String? {
         guard type == .codexACP else { return nil }
         switch option.category {
-        case "thought_level": return "low"
+        case "model": return "gpt-6-luna"
+        case "thought_level": return "max"
         // Codex's default "Auto review" runs a second model over every tool call (~10 s a task);
         // read-only keeps its shell harmless and puts the browser tools under Harbor's own approval.
         case "mode": return "read-only"

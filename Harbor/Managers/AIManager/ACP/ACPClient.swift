@@ -22,6 +22,8 @@ final class ACPClient {
     struct Preset {
         let type: AIProviderType
         let package: String
+        /// The agent's own CLI, whose presence on PATH means it is installed (and holds the sign-in).
+        let cli: String
         /// What to run in Terminal when the agent answers that it is not signed in.
         let signIn: String
 
@@ -29,11 +31,19 @@ final class ACPClient {
         var modelId: String { type.rawValue + ".default" }
 
         static let all: [Preset] = [
-            Preset(type: .claudeACP, package: "@agentclientprotocol/claude-agent-acp", signIn: "claude /login"),
-            Preset(type: .codexACP, package: "@agentclientprotocol/codex-acp", signIn: "codex login"),
+            Preset(type: .claudeACP, package: "@agentclientprotocol/claude-agent-acp", cli: "claude", signIn: "claude /login"),
+            Preset(type: .codexACP, package: "@agentclientprotocol/codex-acp", cli: "codex", signIn: "codex login"),
         ]
 
         static func of(_ type: AIProviderType) -> Preset? { all.first { $0.type == type } }
+
+        /// The agents whose CLI is on the person's PATH, in `all`'s order.
+        static func installed() async -> [Preset] {
+            let directories = await Launcher.loginShellPath().split(separator: ":").map(String.init)
+            return all.filter { preset in
+                directories.contains { FileManager.default.isExecutableFile(atPath: "\($0)/\(preset.cli)") }
+            }
+        }
     }
 
     enum ACPError: LocalizedError {
@@ -326,6 +336,7 @@ extension ACPClient {
         let path: String
 
         private static var cached: Launcher?
+        private static var cachedPath: String?
 
         static func resolve() async throws -> Launcher {
             if let cached { return cached }
@@ -348,11 +359,12 @@ extension ACPClient {
 
         /// The PATH of an interactive login shell, where profiles (`.zprofile`, `.zshrc`) add Bun,
         /// Homebrew and Node. Falls back to the usual install folders if the shell does not answer.
-        private static func loginShellPath() async -> String {
+        static func loginShellPath() async -> String {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
             let fallback = ["\(home)/.bun/bin", "\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].joined(separator: ":")
+            if let cachedPath { return cachedPath }
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-            return await Task.detached {
+            let path = await Task.detached {
                 let process = Process()
                 let output = Pipe()
                 process.executableURL = URL(fileURLWithPath: shell)
@@ -370,6 +382,8 @@ extension ACPClient {
                 let path = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 return path.isEmpty ? fallback : path + ":" + fallback
             }.value
+            cachedPath = path
+            return path
         }
     }
 }
