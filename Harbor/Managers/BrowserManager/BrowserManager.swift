@@ -413,6 +413,7 @@ class BrowserManager: ObservableObject {
     var sponsorBlockManager: SponsorBlockManager
     var findManager: FindManager
     var importManager: ImportManager
+    let importLedger = ImportLedger()
     var zoomManager = ZoomManager()
     var keyboardShortcutManager: KeyboardShortcutManager?
     weak var mcpManager: MCPManager?

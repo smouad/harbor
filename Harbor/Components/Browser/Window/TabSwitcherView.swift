@@ -41,8 +41,7 @@ struct TabSwitcherView: View {
                 withAnimation(HarborDesign.Motion.quick) { proxy.scrollTo(switcher.items[index], anchor: .center) }
             }
         }
-        // Up to four and a half cards fit, so a longer list shows it scrolls.
-        .frame(maxWidth: (cardWidth + HarborDesign.Spacing.sm) * 4.5 + HarborDesign.Spacing.md * 2)
+        // Five cards at most (`TabsController.switcherLimit`), so it never needs to scroll.
         .fixedSize(horizontal: true, vertical: true)
         .harborFloatingSurface(in: HarborDesign.Radius.shape(HarborDesign.Radius.lg))
         .allowsHitTesting(false)

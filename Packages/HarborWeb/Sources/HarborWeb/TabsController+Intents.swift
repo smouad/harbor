@@ -241,8 +241,11 @@ extension TabsController {
         select(order[next], in: window)
     }
 
-    /// The tabs of the window's space, the one on screen first and then the rest by when each was
-    /// last selected. Tabs not selected since launch follow in sidebar order.
+    /// How many tabs the recent-tabs switcher offers.
+    public static let switcherLimit = 5
+
+    /// The five tabs of the window's space visited last, the one on screen first. When fewer than
+    /// five have been visited since launch, tabs in sidebar order fill the rest.
     public func recentItems(in window: BrowserWindowState) -> [UUID] {
         guard let spaceID = window.spaceID else { return [] }
         let source = tree(owner(of: window))
@@ -255,7 +258,7 @@ extension TabsController {
             ordered.insert(current, at: 0)
         }
         ordered += displayOrder(in: window).filter { seen.insert($0).inserted }
-        return Array(ordered.prefix(Self.recentLimit))
+        return Array(ordered.prefix(Self.switcherLimit))
     }
 
     /// Shows the space at 1-based `number` in the order of the space dots.

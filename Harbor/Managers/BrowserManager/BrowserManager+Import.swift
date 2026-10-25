@@ -11,6 +11,38 @@ import HarborWeb
 import SwiftUI
 import WebKit
 
+/// What each browser's import added, so importing the same browser again replaces it instead of
+/// adding to it. Going back in onboarding and importing a second time used to double every space.
+/// In memory only: it covers the one setup session.
+@MainActor
+final class ImportLedger {
+    struct Entry {
+        var spaces: [UUID] = []
+        var items: [UUID] = []
+    }
+
+    private var entries: [String: Entry] = [:]
+    private var recording: String?
+
+    /// Starts recording `browser`'s import and returns what its last import added.
+    func begin(_ browser: String) -> Entry {
+        recording = browser
+        let previous = entries[browser] ?? Entry()
+        entries[browser] = Entry()
+        return previous
+    }
+
+    func end() { recording = nil }
+
+    func add(space: UUID) {
+        if let recording { entries[recording, default: Entry()].spaces.append(space) }
+    }
+
+    func add(item: UUID) {
+        if let recording { entries[recording, default: Entry()].items.append(item) }
+    }
+}
+
 extension BrowserManager {
     /// Imports Arc's spaces in Arc's order, each with its own pinned tabs and folders, open tabs,
     /// favorites (from the space's Arc profile) and color. A space Harbor made on first launch
@@ -19,6 +51,7 @@ extension BrowserManager {
         let result = await importManager.importArcSidebarData()
         guard let window = importWindow, let original = importSpaceID(window), !result.spaces.isEmpty else { return }
         let replaceOriginal = isUntouchedStarterSpace(original)
+        let previous = importLedger.begin("arc")
 
         var lastSpace = tabs.orderedSpaces.last?.id
         var firstImported: UUID?
@@ -31,6 +64,7 @@ extension BrowserManager {
             ) else { continue }
             lastSpace = spaceID
             firstImported = firstImported ?? spaceID
+            importLedger.add(space: spaceID)
             profiles.append((spaceID, known.first { $0.directory == space.profileDirectory }
                 ?? ChromiumProfile(directory: space.profileDirectory, name: space.title)))
             importTabs(space.unpinned.map(\.url), into: .tabs(spaceID: spaceID), window: window)
@@ -43,6 +77,21 @@ extension BrowserManager {
             tabs.deleteSpace(original)
         }
         await importChromiumData(.arc, targets: profiles, options: options)
+        importLedger.end()
+        discardImport(previous, replacement: firstImported, window: window)
+    }
+
+    /// Removes what an earlier import of the same browser added, once its replacement exists, so the
+    /// window never lands on a space that is about to go and there is always a space left.
+    private func discardImport(_ previous: ImportLedger.Entry, replacement: UUID?, window: BrowserWindowState) {
+        for id in previous.items where tabs.item(id) != nil { tabs.remove(id) }
+        if let current = window.spaceID, previous.spaces.contains(current),
+           let next = replacement ?? tabs.orderedSpaces.first(where: {
+               !previous.spaces.contains($0.id) && $0.id != tabs.agentSpaceID
+           })?.id {
+            tabs.setSpace(next, in: window)
+        }
+        for id in previous.spaces where tabs.orderedSpaces.contains(where: { $0.id == id }) { tabs.deleteSpace(id) }
     }
 
     /// No favorites, nothing pinned and at most the one tab a first launch opens.
@@ -61,6 +110,7 @@ extension BrowserManager {
                 importTabs([tab.url], into: parent, window: window)
             case .folder(let folder):
                 guard let folderID = tabs.createFolder(title: folder.title, in: parent, after: nil, open: false) else { continue }
+                importLedger.add(item: folderID)
                 importItems(folder.items, into: .folder(itemID: folderID), window: window)
             }
         }
@@ -68,7 +118,12 @@ extension BrowserManager {
 
     func importDiaData(options: ChromiumImportOptions = ChromiumImportOptions()) async {
         let result = await importManager.importDiaData()
-        guard let window = importWindow, let spaceID = importSpaceID(window) else { return }
+        guard let window = importWindow, let current = importSpaceID(window) else { return }
+        let previous = importLedger.begin("dia")
+        // A space an earlier Dia import made is about to go, so this one lands in another.
+        let spaceID = previous.spaces.contains(current)
+            ? (tabs.orderedSpaces.first { !previous.spaces.contains($0.id) && $0.id != tabs.agentSpaceID }?.id ?? current)
+            : current
 
         importTabs(result.favoriteTabs.map(\.url), into: .favorites(spaceID: spaceID), window: window)
         importTabs(result.windowTabs.map(\.url), into: .tabs(spaceID: spaceID), window: window)
@@ -83,10 +138,13 @@ extension BrowserManager {
                 targets.append((spaceID, profile))
             } else if let created = tabs.createSpace(name: profile.name, icon: "person.fill", accentHex: "#7C7C7C", after: lastSpace) {
                 lastSpace = created
+                importLedger.add(space: created)
                 targets.append((created, profile))
             }
         }
         await importChromiumData(.dia, targets: targets, options: options)
+        importLedger.end()
+        discardImport(previous, replacement: spaceID, window: window)
     }
 
     func importSafariData(from directoryURL: URL, importBookmarks: Bool, importHistory: Bool) async {
@@ -95,6 +153,11 @@ extension BrowserManager {
             importBookmarks: importBookmarks,
             importHistory: importHistory
         )
+        let previous = importLedger.begin("safari")
+        defer {
+            importLedger.end()
+            if let window = importWindow { discardImport(previous, replacement: importSpaceID(window), window: window) }
+        }
 
         if !result.bookmarks.isEmpty, let window = importWindow, let spaceID = importSpaceID(window) {
             let favoritesBookmarks = result.bookmarks.filter { $0.folder == "Favorites" }
@@ -211,7 +274,9 @@ extension BrowserManager {
     private func importTabs(_ urls: [String], into parent: Parent, window: BrowserWindowState) {
         for string in urls.reversed() {
             guard let url = URL(string: string), url.scheme != nil else { continue }
-            tabs.open(url: url, in: window, placement: .background, parent: parent)
+            if let id = tabs.open(url: url, in: window, placement: .background, parent: parent) {
+                importLedger.add(item: id)
+            }
         }
     }
 }
