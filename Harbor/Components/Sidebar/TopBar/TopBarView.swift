@@ -192,16 +192,18 @@ struct TopBarView: View {
     /// Pinned extensions and the extension library, at the trailing edge.
     @ViewBuilder
     private var trailingControls: some View {
-        if browserManager.tabs.selectedSession(in: windowState) != nil,
-           let extensionManager = browserManager.extensionManager {
-            let pinnedIDs = browserManager.harborSettings?.pinnedExtensionIDs ?? []
-            let pinnedExtensions = extensionManager.installedExtensions.filter { pinnedIDs.contains($0.id) }
-            HStack(spacing: HarborDesign.Spacing.xxs) {
+        HStack(spacing: HarborDesign.Spacing.xxs) {
+            AssistantButton(tint: navButtonColor)
+                .environmentObject(browserManager)
+            if browserManager.tabs.selectedSession(in: windowState) != nil,
+               let extensionManager = browserManager.extensionManager {
+                let pinnedIDs = browserManager.harborSettings?.pinnedExtensionIDs ?? []
+                let pinnedExtensions = extensionManager.installedExtensions.filter { pinnedIDs.contains($0.id) }
                 if !pinnedExtensions.isEmpty {
                     ExtensionActionView(extensions: pinnedExtensions)
                         .environmentObject(browserManager)
                 }
-                ExtensionLibraryButton()
+                ExtensionLibraryButton(tint: navButtonColor)
                     .environmentObject(browserManager)
                     .onAppear {
                         let installedIDs = extensionManager.installedExtensions

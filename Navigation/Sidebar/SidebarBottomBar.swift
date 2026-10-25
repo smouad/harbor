@@ -21,6 +21,7 @@ struct SidebarBottomBar: View {
     let onMenuTap: () -> Void
     let onNewSpaceTap: () -> Void
     let onMenuHover: (Bool) -> Void
+    @Environment(\.harborSettings) private var harborSettings
     @State private var showsNewMenu = false
     
     var body: some View {
@@ -33,6 +34,12 @@ struct SidebarBottomBar: View {
                     .frame(maxWidth: .infinity)
                     .environmentObject(browserManager)
                     .environment(windowState)
+            }
+
+            // With the address bar on top the sparkle lives in the top bar instead.
+            if !harborSettings.topBarAddressView {
+                AssistantButton(tint: nil)
+                    .environmentObject(browserManager)
             }
 
             // Hide new space button in incognito windows

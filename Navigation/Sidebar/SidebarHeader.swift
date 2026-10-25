@@ -34,8 +34,7 @@ struct SidebarHeader: View {
 
     /// The space's name always heads its tabs (`SpaceView`'s title), so this row is only buttons.
     private var showsControlsRow: Bool {
-        let hasButtons = harborSettings.sidebarPosition != .left || harborSettings.showAIAssistant
-        return harborSettings.topBarAddressView ? harborSettings.sidebarPosition != .left : hasButtons
+        harborSettings.sidebarPosition != .left
     }
 
     private var windowControls: some View {
@@ -76,12 +75,6 @@ struct SidebarWindowControlsView: View {
                 if harborSettings.sidebarPosition != .left {
                     Button("Toggle Sidebar", systemImage: "sidebar.right") {
                         browserManager.toggleSidebar(for: windowState)
-                    }
-                }
-
-                if harborSettings.showAIAssistant {
-                    Button("Toggle AI Assistant", systemImage: "sparkle") {
-                        browserManager.toggleAISidebar(for: windowState)
                     }
                 }
             }
