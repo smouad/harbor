@@ -66,7 +66,7 @@ struct SidebarHoverOverlayView: View {
 
     /// The docked sidebar's own background, so the overlay reads as the same sidebar.
     private var sidebarBackground: some View {
-        let accent = windowState.isIncognito ? SpaceGradient.incognito.primaryColor : browserManager.gradientColorManager.accentColor
+        let accent = browserManager.accentColor(for: windowState)
         let isAgent = windowState.spaceID != nil && windowState.spaceID == browserManager.tabs.agentSpaceID
         let theme = windowState.isIncognito || isAgent ? nil : windowState.spaceID.flatMap { browserManager.tabs.space($0)?.theme }
         return Group {

@@ -249,7 +249,7 @@ struct WebsiteView: View {
                         LinkStatusBar(
                             hoveredLink: hoveredLink,
                             isCommandPressed: isCommandPressed,
-                            accentColor: browserManager.gradientColorManager.accentColor
+                            accentColor: browserManager.accentColor(for: windowState)
                         )
                         .padding(10)
                         Spacer()
@@ -367,7 +367,7 @@ private struct SplitPreviewOverlay: View {
                         dragLocation: dragLocation,
                         cardFrame: leftFrame,
                         geometry: geometry,
-                        accentColor: browserManager.gradientColorManager.accentColor
+                        accentColor: browserManager.accentColor(for: windowState)
                     )
                     Spacer()
                 }
@@ -386,7 +386,7 @@ private struct SplitPreviewOverlay: View {
                         dragLocation: dragLocation,
                         cardFrame: rightFrame,
                         geometry: geometry,
-                        accentColor: browserManager.gradientColorManager.accentColor
+                        accentColor: browserManager.accentColor(for: windowState)
                     )
                     Spacer()
                 }

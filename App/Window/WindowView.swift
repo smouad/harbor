@@ -223,7 +223,7 @@ struct WindowView: View {
     @ViewBuilder
     private func WindowBackground() -> some View {
         // Private windows keep the neutral incognito accent, never the space's color.
-        let accent = windowState.isIncognito ? SpaceGradient.incognito.primaryColor : browserManager.gradientColorManager.accentColor
+        let accent = browserManager.accentColor(for: windowState)
         let isActive = windowRegistry.activeWindowId == windowState.id
 
         Group {

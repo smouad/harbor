@@ -26,7 +26,7 @@ struct SidebarNewMenu: View {
     private let iconWidth: CGFloat = 20
 
     /// The row Return would take is filled with the space's color, and the fill follows the pointer.
-    private var accent: Color { browserManager.gradientColorManager.accentColor }
+    private var accent: Color { browserManager.accentColor(for: windowState) }
 
     var body: some View {
         VStack(spacing: HarborDesign.Spacing.xxs) {
