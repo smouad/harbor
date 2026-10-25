@@ -2,11 +2,12 @@
 # Builds Release from the working tree and installs it as /Applications/Harbor Dev.app, a second app
 # beside the real Harbor for trying work that is not released yet.
 #
-#   scripts/install-dev.sh [--no-launch]
+#   scripts/install-dev.sh [--no-launch | --build-only]
 #
 # It has its own bundle id (com.mouad.harbor.dev), so its tabs, logins, settings and keychain items
 # are separate from Harbor's, and its update checks are off, so a release never replaces it.
-# Signed like scripts/install-local.sh. Run it again to put newer work in.
+# Signed like scripts/install-local.sh. Run it again to put newer work in. Installing quits a running
+# Harbor Dev; its tabs and settings are kept.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,6 +29,12 @@ plist="$app/Contents/Info.plist"
 
 codesign --force --deep --sign "$identity" --entitlements "$PWD/Harbor/Harbor-CI.entitlements" "$app"
 codesign --verify --deep --strict "$app"
+
+# --build-only stops here, so a running Harbor Dev is left alone until the new build is wanted.
+if [ "${1:-}" = "--build-only" ]; then
+    echo "Built $app, not installed"
+    exit 0
+fi
 
 osascript -e "tell application id \"$bundle_id\" to quit" 2>/dev/null || true
 for _ in $(seq 1 100); do pgrep -f "Harbor Dev.app/Contents/MacOS/Harbor" >/dev/null || break; sleep 0.2; done
