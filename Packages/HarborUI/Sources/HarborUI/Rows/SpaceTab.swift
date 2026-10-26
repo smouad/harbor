@@ -181,10 +181,10 @@ public struct SpaceTab: View {
                 }
             }
             .clipShape(HarborDesign.Radius.shape(HarborDesign.Radius.md))
-            .rowSelectionHighlight(isCurrentTab)
             .opacity(isUnloaded ? HarborDesign.Surface.unloadedOpacity : 1)
         }
         .buttonStyle(PlainButtonStyle())
+        .rowSelectionHighlight(isCurrentTab)
         .onHoverTracking { hovering in
             withAnimation(HarborDesign.Motion.quick) {
                 isHovering = hovering

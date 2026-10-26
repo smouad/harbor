@@ -147,6 +147,8 @@ public enum HarborDesign {
         public static let settle = Animation.smooth(duration: 0.6)       // the separator wave rising and flattening
         public static let wavePeriod: TimeInterval = 1.6                 // seconds for the wave to travel one cycle
         public static let flight = Animation.easeIn(duration: 0.6)       // a download flying from the page to its button
+        public static let slide = Animation.easeOut(duration: 0.14)     // the selected row's highlight landing on its row
+        public static let glide = Animation.spring(response: 0.34, dampingFraction: 0.82) // a selection change carried across a page of rows
         public static let spring = Animation.snappy(duration: 0.3)      // palette, dialog, toast, drag reorder, gesture-tracked motion
         public static let barMorph = Animation.spring(response: 0.42, dampingFraction: 0.86) // top bar tucking away and back
     }

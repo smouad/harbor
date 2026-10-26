@@ -510,12 +510,13 @@ private struct SpacePageFrame<Content: View>: View {
     /// Shared by every selectable row and tile on the page: the highlight is one shape that
     /// moves between them (`rowSelectionHighlight`).
     @Namespace private var selection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         content
             .environment(\.rowSelectionNamespace, selection)
             // A change of selection carries the highlight across with a spring.
-            .animation(HarborDesign.Motion.spring, value: tabs.selectedItemID(in: windowState))
+            .animation(reduceMotion ? nil : HarborDesign.Motion.glide, value: tabs.selectedItemID(in: windowState))
             .frame(width: windowState.sidebarWidth > 0 ? windowState.sidebarWidth : nil, alignment: .topLeading)
             .clipped()
     }

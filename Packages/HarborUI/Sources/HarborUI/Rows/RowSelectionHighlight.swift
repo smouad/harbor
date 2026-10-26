@@ -24,41 +24,44 @@ public extension EnvironmentValues {
     }
 }
 
-private struct SelectionShape: View {
-    let radius: CGFloat
-
-    var body: some View {
-        let shape = HarborDesign.Radius.shape(radius)
-        shape
-            .fill(HarborDesign.Surface.raised)
-            .overlay(shape.strokeBorder(HarborDesign.Surface.hairline, lineWidth: HarborDesign.Size.hairlineWidth))
-            .harborElevation(.raised)
-    }
-}
-
+/// The highlight is drawn the way the open-source browser Search (MIT, Office Commun,
+/// github.com/driceroland/Search) draws its tab ground: in the row's background, as one clipped
+/// shape that carries a shared `matchedGeometryEffect` id, with the landing animated on the
+/// ground itself. The row's own dimming and its button label stay outside it, so a dimmed
+/// (unloaded) row can never fade the highlight while it travels.
 private struct RowSelectionHighlight: ViewModifier {
     let isSelected: Bool
     let radius: CGFloat
     @Environment(\.rowSelectionNamespace) private var namespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        if let namespace {
-            content.background {
-                if isSelected {
-                    SelectionShape(radius: radius)
-                        .matchedGeometryEffect(id: "rowSelection", in: namespace)
-                }
+        content.background {
+            ground.animation(reduceMotion ? nil : HarborDesign.Motion.slide, value: isSelected)
+        }
+    }
+
+    @ViewBuilder
+    private var ground: some View {
+        if isSelected {
+            let shape = HarborDesign.Radius.shape(radius)
+            let surface = ZStack {
+                Rectangle().fill(HarborDesign.Surface.raised)
+                Rectangle().strokeBorder(HarborDesign.Surface.hairline, lineWidth: HarborDesign.Size.hairlineWidth)
             }
-        } else {
-            content
-                .harborRowSelection(isSelected, radius: radius)
-                .harborElevation(isSelected ? .raised : .flat)
+            .clipShape(shape)
+            if let namespace {
+                surface.matchedGeometryEffect(id: "rowSelection", in: namespace)
+            } else {
+                surface.harborElevation(.raised)
+            }
         }
     }
 }
 
 public extension View {
-    /// The highlight behind a selected row or tile.
+    /// The highlight behind a selected row or tile. Apply it to the row's outermost view, outside
+    /// any dimming.
     func rowSelectionHighlight(_ isSelected: Bool, radius: CGFloat = HarborDesign.Radius.md) -> some View {
         modifier(RowSelectionHighlight(isSelected: isSelected, radius: radius))
     }

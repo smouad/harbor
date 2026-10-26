@@ -71,9 +71,9 @@ public struct PinnedTabView<Icon: View>: View {
             .frame(height: HarborDesign.Size.essentialsTile)
             .frame(minWidth: HarborDesign.Size.essentialsTile)
             .contentShape(HarborDesign.Radius.shape(HarborDesign.Radius.tile))
-            .rowSelectionHighlight(isActive, radius: HarborDesign.Radius.tile)
         }
         .buttonStyle(.plain)
+        .rowSelectionHighlight(isActive, radius: HarborDesign.Radius.tile)
         .onHoverTracking { hovering in
             self.isHovered = hovering
         }
