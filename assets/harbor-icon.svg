@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11446A"/><stop offset="1" stop-color="#061726"/>
+    </linearGradient>
+    <linearGradient id="foam" gradientUnits="userSpaceOnUse" x1="0" y1="212" x2="0" y2="812">
+      <stop offset="0" stop-color="#F6FBFD"/><stop offset="1" stop-color="#9CD5E8"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sea)"/>
+  <g transform="translate(512 512) scale(0.72) translate(-512 -512)">
+    <rect x="232" y="212" width="132" height="600" rx="66" fill="url(#foam)"/>
+    <rect x="660" y="212" width="132" height="600" rx="66" fill="url(#foam)"/>
+    <path d="M 298 512 H 364 C 401 512 401 466 438 466 C 512 466 512 558 586 558 C 623 558 623 512 660 512 H 726" fill="none" stroke="url(#foam)" stroke-width="100" stroke-linecap="round"/>
+  </g>
+</svg>
