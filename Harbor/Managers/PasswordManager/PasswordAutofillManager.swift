@@ -12,11 +12,13 @@
 import AppKit
 import SwiftUI
 import WebKit
+import os
 import HarborWeb
 
 @MainActor
 final class PasswordAutofillManager {
     private weak var browserManager: BrowserManager?
+    private static let log = Logger(subsystem: "com.mouad.harbor", category: "Autofill")
 
     private struct Prompt {
         var all: [SavedLogin]
@@ -46,8 +48,12 @@ final class PasswordAutofillManager {
     // MARK: - From the page
 
     func fieldFocused(_ field: AutofillField, in session: PageSession) {
+        Self.log.notice("field focused: \(field.kind.rawValue, privacy: .public) on \(field.scheme, privacy: .public)://\(field.host, privacy: .public)")
         guard LoginMatching.isTrusted(scheme: field.scheme, host: field.host),
-              let webView = field.webView, webView.window != nil else { return dismiss() }
+              let webView = field.webView, webView.window != nil else {
+            Self.log.notice("not offered: untrusted origin or no window")
+            return dismiss()
+        }
 
         // Typing narrows the list that is already up; no need to ask the store again.
         if var current = prompt, current.webView === webView, field.kind == current.field.kind {
@@ -60,14 +66,19 @@ final class PasswordAutofillManager {
 
         generation += 1
         let token = generation
-        // A private window has no space: it sees only the logins kept for every space.
+        // The space only orders the list: every login for the site is offered in every window.
         let space = session.isPrivate ? nil : browserManager?.tabs.spaceID(of: session.itemID)
         Task {
             let found = await PasswordStore.shared.logins(forHost: field.host, space: space)
+            Self.log.notice("\(found.count) saved logins for \(field.host, privacy: .public)")
             guard token == generation else { return }
             let shown = Self.narrowed(found, by: field.typed)
-            guard !shown.isEmpty, let webView = field.webView, webView.window != nil else { return dismiss() }
+            guard !shown.isEmpty, let webView = field.webView, webView.window != nil else {
+                Self.log.notice("nothing to show (\(shown.count) after narrowing)")
+                return dismiss()
+            }
             present(all: found, shown: shown, field: field, session: session, webView: webView)
+            Self.log.notice("dropdown shown with \(shown.count) logins at \(String(describing: self.prompt?.view.frame), privacy: .public)")
         }
     }
 

@@ -83,14 +83,19 @@ actor PasswordStore {
         return logins
     }
 
-    /// The logins offered on a page: this site's, from this space or from every space, the page's
-    /// exact host first. A private window passes no space, so it sees only the shared ones.
+    /// The logins offered on a page: every saved login for this site, from any space. The page's
+    /// exact host leads, then the ones kept in this space, then the newest. They are not hidden by
+    /// space: an import ties each browser profile's logins to one space, and on any other space
+    /// the list was simply empty, which read as the feature not working.
     func logins(forHost host: String, space: UUID?) -> [SavedLogin] {
         all()
-            .filter { LoginMatching.matches(loginHost: $0.host, pageHost: host) && ($0.spaceID == nil || $0.spaceID == space) }
+            .filter { LoginMatching.matches(loginHost: $0.host, pageHost: host) }
             .sorted { lhs, rhs in
-                let (a, b) = (LoginMatching.isExact(loginHost: lhs.host, pageHost: host), LoginMatching.isExact(loginHost: rhs.host, pageHost: host))
-                return a == b ? lhs.created > rhs.created : a
+                let exact = (LoginMatching.isExact(loginHost: lhs.host, pageHost: host), LoginMatching.isExact(loginHost: rhs.host, pageHost: host))
+                if exact.0 != exact.1 { return exact.0 }
+                let here = (lhs.spaceID == space || lhs.spaceID == nil, rhs.spaceID == space || rhs.spaceID == nil)
+                if here.0 != here.1 { return here.0 }
+                return lhs.created > rhs.created
             }
     }
 

@@ -208,6 +208,10 @@ public final class PageSession: NSObject, Identifiable {
     @ObservationIgnored var jsDialogsSuppressed = false
     @ObservationIgnored var hasFavicon: Bool = false
     @ObservationIgnored var faviconFetchInFlight: Bool = false
+    #if os(macOS)
+    /// WebKit's own report of the page's icons; created with the first web view.
+    @ObservationIgnored var iconLoader: PageIconLoader?
+    #endif
     @ObservationIgnored var faviconFetchAttempts: Int = 0
     static let maxFaviconRetries = 3
 
@@ -429,6 +433,10 @@ public final class PageSession: NSObject, Identifiable {
         controller.removeScriptMessageHandler(forName: Self.translateHandlerName, contentWorld: Self.translateWorld)
         controller.add(self, contentWorld: Self.translateWorld, name: Self.translateHandlerName)
         webView.customUserAgent = wantedUserAgent(for: url)
+        #if os(macOS)
+        if iconLoader == nil { iconLoader = PageIconLoader(session: self) }
+        iconLoader?.attach(to: webView)
+        #endif
         // Let the web content control its own background so extension styles (like Dark
         // Reader) can paint dark backgrounds. The themed background shows only while loading.
         webView.setDrawsPageBackground(true)
@@ -768,6 +776,14 @@ public final class PageSession: NSObject, Identifiable {
         }
     }
 
+    /// An icon WebKit loaded for the page: shown, and kept for the next visit.
+    func applyWebKitIcon(_ image: PlatformImage, host: String) {
+        // A private page's host must not reach ~/Library/Caches/FaviconCache.
+        FaviconCache.shared.store(image, for: host, toDisk: !isPrivate)
+        favicon = SwiftUI.Image(platformImage: image)
+        hasFavicon = true
+    }
+
     func fetchAndSetFavicon(for url: URL) async {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
         guard url.scheme == "http" || url.scheme == "https", url.host != nil else {
@@ -783,6 +799,15 @@ public final class PageSession: NSObject, Identifiable {
             hasFavicon = true
             guard await FaviconCache.shared.isStale(cacheKey) else { return }
         }
+
+        // WebKit reports the page's icons as it reads them, with the page's own cookies: give it
+        // a moment before asking the site ourselves, which a login or a bot check turns away.
+        #if os(macOS)
+        if let loader = iconLoader, primaryWebView != nil {
+            for _ in 0..<12 where !loader.hasDelivered { try? await Task.sleep(nanoseconds: 150_000_000) }
+            if loader.hasDelivered { return }
+        }
+        #endif
 
         faviconFetchAttempts += 1
 

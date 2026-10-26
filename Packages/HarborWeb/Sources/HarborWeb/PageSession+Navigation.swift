@@ -20,6 +20,10 @@ extension PageSession: WKNavigationDelegate {
         didStartProvisionalNavigation navigation: WKNavigation!
     ) {
         loadingState = .didStartProvisionalNavigation
+        // The icons WebKit reports from here on are this page's.
+        #if os(macOS)
+        iconLoader?.reset()
+        #endif
         blockedURL = nil
         controller?.tabEvents?.tabPropertiesChanged(self, properties: [.loading])
 

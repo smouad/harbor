@@ -19,18 +19,21 @@ struct PasswordStoreCheck {
         ])
         precondition(written == 4, "bad URL and empty password are skipped, got \(written)")
 
-        // A space sees its own logins and the shared ones, on any host of the same site.
+        // Every space is offered every login for the site, on any host of that site.
         let inWork = await store.logins(forHost: "login.example.com", space: work)
-        precondition(Set(inWork.map(\.username)) == ["me@work.com", "shared"], "got \(inWork.map(\.username))")
+        precondition(Set(inWork.map(\.username)) == ["me@work.com", "me@home.com", "shared"], "got \(inWork.map(\.username))")
         let inPersonal = await store.logins(forHost: "example.com", space: personal)
-        precondition(Set(inPersonal.map(\.username)) == ["me@home.com", "shared"], "got \(inPersonal.map(\.username))")
+        precondition(Set(inPersonal.map(\.username)) == ["me@work.com", "me@home.com", "shared"], "got \(inPersonal.map(\.username))")
+        // This space's own come before another space's, among logins for the same host.
+        precondition(inPersonal.first?.username == "me@home.com" || inPersonal.first?.username == "shared", "exact host and this space first, got \(inPersonal.map(\.username))")
+        precondition(inPersonal.last?.username == "me@work.com", "another space's, on another host, last")
         // The page's own host leads: on example.com the login saved for example.com comes before
         // the one saved for www.example.com, though that one is newer.
         let onBare = await store.logins(forHost: "example.com", space: work)
         precondition(onBare.first?.host == "example.com" && onBare.last?.host == "www.example.com", "exact host first, got \(onBare.map(\.host))")
-        // A private window (no space) sees only the shared ones.
+        // A private window (no space) sees them too.
         let inPrivate = await store.logins(forHost: "example.com", space: nil)
-        precondition(inPrivate.map(\.username) == ["shared"], "got \(inPrivate.map(\.username))")
+        precondition(inPrivate.count == 3, "got \(inPrivate.map(\.username))")
         // Another site gets nothing.
         let lookalike = await store.logins(forHost: "notexample.com", space: work)
         let suffixTrick = await store.logins(forHost: "evil.example.com.evil.io", space: work)

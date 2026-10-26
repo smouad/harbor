@@ -18,6 +18,8 @@ struct FaviconCandidate: Equatable {
     /// The `media` attribute: sites ship a light and a dark icon and pick with it.
     var media: String
     var rel: String
+    /// The icon's real size in pixels once it has been downloaded; nil until then.
+    var pixelSize: Int?
 
     private var isDarkVariant: Bool { media.lowercased().contains("dark") }
     private var isLightVariant: Bool { media.lowercased().contains("light") }
@@ -27,6 +29,7 @@ struct FaviconCandidate: Equatable {
     /// The edge in points the icon declares, or a guess: a vector scales to anything, and an
     /// undeclared one is usually the old 32 pixel icon.
     private var declaredSize: Int {
+        if let pixelSize { return pixelSize }
         let lowered = sizes.lowercased()
         if lowered == "any" { return 64 }
         // "16x16 32x32": the biggest listed.

@@ -181,7 +181,7 @@ public struct SpaceTab: View {
                 }
             }
             .clipShape(HarborDesign.Radius.shape(HarborDesign.Radius.md))
-            .harborRowSelection(isCurrentTab)
+            .rowSelectionHighlight(isCurrentTab)
             .opacity(isUnloaded ? HarborDesign.Surface.unloadedOpacity : 1)
         }
         .buttonStyle(PlainButtonStyle())
@@ -210,7 +210,6 @@ public struct SpaceTab: View {
                 .environment(tabs)
                 .environment(\.tabActions, actions)
         }
-        .harborElevation(isCurrentTab ? .raised : .flat)
     }
 
     private var accentColor: Color { actions?.accentColor ?? .accentColor }
