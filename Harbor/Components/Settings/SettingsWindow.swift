@@ -250,6 +250,8 @@ private struct SettingsDetailPane: View {
                     SettingsAITab()
                 case .privacy:
                     PrivacySettingsView()
+                case .passwords:
+                    SettingsPasswordsTab()
                 case .adBlocker:
                     SettingsAdBlockerTab()
                 case .tweaks:

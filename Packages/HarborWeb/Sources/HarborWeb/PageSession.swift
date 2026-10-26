@@ -786,6 +786,17 @@ public final class PageSession: NSObject, Identifiable {
 
         faviconFetchAttempts += 1
 
+        // The page's own icon links first, fetched with its cookies: a site behind a login or a
+        // bot check turns away the bare requests below.
+        if let page = primaryWebView, page.url?.host == url.host,
+           let nsImage = await iconFromPage(page, pageURL: page.url ?? url) {
+            // A private page's host must not reach ~/Library/Caches/FaviconCache.
+            FaviconCache.shared.store(nsImage, for: cacheKey, toDisk: !isPrivate)
+            favicon = SwiftUI.Image(platformImage: nsImage)
+            hasFavicon = true
+            return
+        }
+
         // FaviconFinder parses HTML <link> tags, then falls back to /favicon.ico. It only
         // fetches through URLSession.shared (shared cookies, disk URLCache), so a private
         // page skips it and takes the root icon below.

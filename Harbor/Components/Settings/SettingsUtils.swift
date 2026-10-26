@@ -13,6 +13,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
     case appearance
     case ai
     case privacy
+    case passwords
     case adBlocker
     case tweaks
     case airTrafficControl
@@ -27,6 +28,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
         case .appearance: return "Appearance"
         case .ai: return "AI"
         case .privacy: return "Privacy"
+        case .passwords: return "Passwords"
         case .adBlocker: return "Ad Blocker"
         case .tweaks: return "Tweaks"
         case .airTrafficControl: return "Air Traffic Control"
@@ -43,6 +45,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
         case .appearance: return "paintbrush"
         case .ai: return "sparkles"
         case .privacy: return "lock.shield"
+        case .passwords: return "key"
         case .adBlocker: return "shield.lefthalf.filled"
         case .tweaks: return "wand.and.stars"
         case .airTrafficControl: return "arrow.triangle.branch"
@@ -60,6 +63,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
         case .appearance: return ["theme", "dark", "light", "sidebar"]
         case .ai: return ["gemini", "openrouter", "ollama", "mcp"]
         case .privacy: return ["cookies", "cache", "tracking", "website data"]
+        case .passwords: return ["logins", "autofill", "saved passwords", "import", "keychain", "credentials"]
         case .adBlocker: return ["ads", "filters", "blocking", "allowlist", "whitelist"]
         case .tweaks: return ["youtube", "shorts", "thumbnails", "sponsorblock", "facebook", "instagram", "reels", "download", "social media"]
         case .airTrafficControl: return ["routing", "rules", "domains"]
@@ -83,6 +87,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
         case .appearance: return .pink
         case .ai: return .purple
         case .privacy: return .blue
+        case .passwords: return .yellow
         case .adBlocker: return .green
         case .tweaks: return .orange
         case .airTrafficControl: return .mint
@@ -98,7 +103,7 @@ enum SettingsTabs: String, Hashable, CaseIterable {
         [
             (nil, [.general, .appearance]),
             (nil, [.ai]),
-            (nil, [.privacy, .adBlocker, .airTrafficControl]),
+            (nil, [.privacy, .passwords, .adBlocker, .airTrafficControl]),
             (nil, [.spaces, .shortcuts, .extensions, .developer]),
             (nil, [.tweaks]),
         ]

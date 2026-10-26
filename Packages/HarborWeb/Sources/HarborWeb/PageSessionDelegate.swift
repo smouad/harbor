@@ -60,6 +60,14 @@ public protocol PageSessionDelegate: AnyObject {
     func shortcutDetectorDidNavigate(to url: URL)
     func updateDetectedShortcuts(for url: String, shortcuts: Set<String>)
 
+    // MARK: Password autofill
+
+    /// The person put the cursor in a login field (or typed in a user name field).
+    func autofillField(_ field: AutofillField, focusedIn session: PageSession)
+    func autofillKey(_ key: AutofillKey, in session: PageSession)
+    /// The page moved on: the dropdown has nothing to point at.
+    func autofillDismiss(in session: PageSession)
+
     // MARK: Chrome Web Store
 
     /// Installs the "Add to Harbor" handler and script on a store page. Returns the handler to
@@ -73,4 +81,11 @@ public protocol PageSessionDelegate: AnyObject {
 @MainActor
 public protocol PictureInPictureHolder: AnyObject {
     var pictureInPictureItemID: UUID? { get }
+}
+
+/// A host with no password manager (the iOS companion today) ignores autofill.
+public extension PageSessionDelegate {
+    func autofillField(_ field: AutofillField, focusedIn session: PageSession) {}
+    func autofillKey(_ key: AutofillKey, in session: PageSession) {}
+    func autofillDismiss(in session: PageSession) {}
 }

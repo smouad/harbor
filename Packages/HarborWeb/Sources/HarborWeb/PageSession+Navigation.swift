@@ -152,6 +152,9 @@ extension PageSession: WKNavigationDelegate {
             }
         }
 
+        // A new page has no field for a dropdown to point at.
+        controller?.sessionDelegate?.autofillDismiss(in: self)
+
         // Fetch favicon after page loads
         if let currentURL = webView.url {
             Task { @MainActor in

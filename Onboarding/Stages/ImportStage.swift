@@ -80,7 +80,7 @@ struct ImportStage: View {
                 optionRow("Signed-in accounts", detail: "Stay signed in to your sites. macOS asks once.", isOn: $options.signIns)
                 optionRow("History", detail: "Pages you visited", isOn: $options.history)
                 optionRow("Bookmarks", detail: "Saved pages and folders", isOn: $options.bookmarks)
-                optionRow("Passwords", detail: "Saved to a file for your password manager", isOn: $options.passwords)
+                optionRow("Passwords", detail: "Offered when you click a sign-in field", isOn: $options.passwords)
             }
         }
         .transition(.opacity)

@@ -234,7 +234,7 @@ extension BrowserManager {
         let reader = ChromiumReader(browser: browser)
         let key = options.needsKey ? await Task.detached { reader.encryptionKey() }.value : nil
 
-        var passwords: [ChromiumLogin] = []
+        var imported = 0
         for (spaceID, profile) in targets {
             let found = await Task.detached {
                 (cookies: options.signIns ? key.map { reader.cookies(in: profile, key: $0) } ?? [] : [],
@@ -262,28 +262,36 @@ extension BrowserManager {
                 }
                 importNodes(found.bookmarks.map(item), into: .pinned(spaceID: spaceID))
             }
-            passwords += found.logins
+            // Each profile's passwords belong to the space it became, as its cookies do.
+            imported += await PasswordStore.shared.save(found.logins.map {
+                NewLogin(url: $0.url, username: $0.username, password: $0.password, spaceID: spaceID)
+            })
         }
-        exportPasswords(passwords, from: browser)
+        if imported > 0 { announcePasswords(imported, from: browser) }
     }
 
-    /// Writes the passwords where the person can import them, readable by them alone, and says so.
-    /// Harbor keeps no passwords of its own: a password manager extension, or the Passwords app,
-    /// holds them.
-    private func exportPasswords(_ logins: [ChromiumLogin], from browser: ChromiumBrowser) {
-        guard !logins.isEmpty,
-              let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
-        let file = downloads.appendingPathComponent("\(browser.name) passwords.csv")
-        guard FileManager.default.createFile(atPath: file.path, contents: Data(PasswordCSV.make(logins).utf8),
-                                             attributes: [.posixPermissions: 0o600]) else { return }
+    /// Passwords from Settings: every profile of the browser, offered in every space.
+    func importSavedPasswords(from browser: ChromiumBrowser) async -> Int {
+        guard browser.isInstalled else { return 0 }
+        let reader = ChromiumReader(browser: browser)
+        // The keychain asks before it hands over the key, so this runs off the main thread.
+        let logins = await Task.detached { () -> [ChromiumLogin] in
+            guard let key = reader.encryptionKey() else { return [] }
+            return reader.profiles().flatMap { reader.logins(in: $0, key: key) }
+        }.value
+        return await PasswordStore.shared.save(logins.map {
+            NewLogin(url: $0.url, username: $0.username, password: $0.password, spaceID: nil)
+        })
+    }
+
+    /// Says what came over. The passwords are in Harbor's own list now: nothing is written to a
+    /// file where anyone who can open it could read them.
+    private func announcePasswords(_ count: Int, from browser: ChromiumBrowser) {
         let alert = NSAlert()
-        alert.messageText = "Your \(browser.name) passwords are in a file"
-        alert.informativeText = "Harbor saved \(logins.count) passwords to “\(file.lastPathComponent)” in Downloads. Import it into Passwords, 1Password or Bitwarden, then delete it: anyone who can open the file can read every password in it."
-        alert.addButton(withTitle: "Show in Finder")
+        alert.messageText = "\(count) passwords imported from \(browser.name)"
+        alert.informativeText = "Harbor offers them when you click a sign-in field on the site they belong to. You can see and manage them in Settings > Passwords."
         alert.addButton(withTitle: "Done")
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.activateFileViewerSelecting([file])
-        }
+        alert.runModal()
     }
 
     // MARK: - Helpers

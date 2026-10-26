@@ -165,11 +165,15 @@ public enum WebContextMenuPayload {
 public final class WebContextMenuBridge: NSObject, WKScriptMessageHandler {
     private weak var session: PageSession?
     private weak var userContentController: WKUserContentController?
+    /// Created and torn down with this bridge: a page view already has one of these for its
+    /// whole life, so the password autofill handler rides on it instead of a third hook.
+    private let autofill: AutofillBridge
 
     public init(session: PageSession?, configuration: WKWebViewConfiguration) {
         self.session = session
         let controller = configuration.userContentController
         self.userContentController = controller
+        self.autofill = AutofillBridge(session: session, configuration: configuration)
         super.init()
 
         controller.add(self, contentWorld: Self.world, name: Self.handlerName)
@@ -177,6 +181,7 @@ public final class WebContextMenuBridge: NSObject, WKScriptMessageHandler {
     }
 
     public func detach() {
+        autofill.detach()
         userContentController?.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: Self.world)
         userContentController = nil
     }

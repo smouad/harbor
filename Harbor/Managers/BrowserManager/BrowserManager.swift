@@ -416,6 +416,8 @@ class BrowserManager: ObservableObject {
     let importLedger = ImportLedger()
     var zoomManager = ZoomManager()
     var keyboardShortcutManager: KeyboardShortcutManager?
+    /// The dropdown of saved logins under a login field.
+    lazy var passwordAutofill = PasswordAutofillManager(browserManager: self)
     weak var mcpManager: MCPManager?
     weak var tabOrganizerManager: TabOrganizerManager?
     weak var harborSettings: HarborSettingsService?

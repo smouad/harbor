@@ -46,6 +46,18 @@ extension BrowserManager: PageSessionDelegate {
         currentProfileSubject.eraseToAnyPublisher()
     }
 
+    func autofillField(_ field: AutofillField, focusedIn session: PageSession) {
+        passwordAutofill.fieldFocused(field, in: session)
+    }
+
+    func autofillKey(_ key: AutofillKey, in session: PageSession) {
+        passwordAutofill.key(key, in: session)
+    }
+
+    func autofillDismiss(in session: PageSession) {
+        passwordAutofill.dismiss(session: session)
+    }
+
     func navigateAcrossWindows(_ itemID: UUID, to url: URL) {
         navigateTabAcrossWindows(itemID, to: url)
     }
