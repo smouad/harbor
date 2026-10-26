@@ -115,21 +115,26 @@ final class PasswordAutofillManager {
 
     private func present(all: [SavedLogin], shown: [SavedLogin], field: AutofillField, session: PageSession, webView: WKWebView) {
         dismiss()
-        guard let content = webView.window?.contentView else { return }
+        guard webView.window != nil else { return }
         let view = AutofillHostingView(rootView: dropdown(logins: shown, keyboardIndex: nil, width: Self.width(for: field, webView: webView)))
         view.safeAreaRegions = []
-        content.addSubview(view, positioned: .above, relativeTo: nil)
+        // Inside the web view itself: a sibling over the window's content view took the clicks but
+        // was drawn under the page, where WebKit's compositing layers sit. A layer order only
+        // counts between layers of one parent, so the list joins the page's own, above them all.
+        view.wantsLayer = true
+        view.layer?.zPosition = Self.layerOrder
+        webView.addSubview(view)
         prompt = Prompt(all: all, logins: shown, keyboardIndex: nil, field: field, session: session, webView: webView, view: view)
         refresh()
     }
 
     /// Rebuilds the list and puts it under the field.
     private func refresh() {
-        guard let current = prompt, let webView = current.webView, let content = webView.window?.contentView else { return }
+        guard let current = prompt, let webView = current.webView, webView.window != nil else { return }
         let width = Self.width(for: current.field, webView: webView)
         current.view.rootView = dropdown(logins: current.logins, keyboardIndex: current.keyboardIndex, width: width)
         let size = current.view.fittingSize
-        current.view.frame = Self.frame(of: current.field, in: webView, content: content, size: size)
+        current.view.frame = Self.frame(of: current.field, in: webView, size: size)
         AutofillBridge.setState(open: true, highlighted: current.keyboardIndex != nil, in: webView)
     }
 
@@ -165,22 +170,24 @@ final class PasswordAutofillManager {
         max(field.rect.width * webView.pageZoom, minimumWidth)
     }
 
+    private static let layerOrder: CGFloat = 20_000
+
     /// The field's box in the page's units is in the web view's own space; this puts the list
-    /// just under it (or over it when there is no room), inside the window.
-    private static func frame(of field: AutofillField, in webView: WKWebView, content: NSView, size: CGSize) -> NSRect {
+    /// just under it (or over it when there is no room), inside the web view.
+    private static func frame(of field: AutofillField, in webView: WKWebView, size: CGSize) -> NSRect {
         let zoom = webView.pageZoom
-        let box = NSRect(x: field.rect.minX * zoom, y: field.rect.minY * zoom + webView.obscuredContentInsets.top,
-                         width: field.rect.width * zoom, height: field.rect.height * zoom)
-        let anchor = content.convert(box, from: webView)
+        let anchor = NSRect(x: field.rect.minX * zoom, y: field.rect.minY * zoom + webView.obscuredContentInsets.top,
+                            width: field.rect.width * zoom, height: field.rect.height * zoom)
+        let bounds = webView.bounds
         let gap: CGFloat = 4, edge: CGFloat = 8
-        let x = min(max(anchor.minX, edge), max(edge, content.bounds.width - size.width - edge))
+        let x = min(max(anchor.minX, edge), max(edge, bounds.width - size.width - edge))
         let y: CGFloat
-        if content.isFlipped {
+        if webView.isFlipped {
             let below = anchor.maxY + gap
-            y = below + size.height <= content.bounds.height - edge ? below : max(edge, anchor.minY - gap - size.height)
+            y = below + size.height <= bounds.height - edge ? below : max(edge, anchor.minY - gap - size.height)
         } else {
             let below = anchor.minY - gap - size.height
-            y = below >= edge ? below : min(content.bounds.height - size.height - edge, anchor.maxY + gap)
+            y = below >= edge ? below : min(bounds.height - size.height - edge, anchor.maxY + gap)
         }
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
