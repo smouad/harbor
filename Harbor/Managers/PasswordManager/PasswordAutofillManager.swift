@@ -116,7 +116,7 @@ final class PasswordAutofillManager {
     private func present(all: [SavedLogin], shown: [SavedLogin], field: AutofillField, session: PageSession, webView: WKWebView) {
         dismiss()
         guard webView.window != nil else { return }
-        let view = AutofillHostingView(rootView: dropdown(logins: shown, keyboardIndex: nil, width: Self.width(for: field, webView: webView)))
+        let view = AutofillHostingView(rootView: dropdown(logins: shown, keyboardIndex: nil, width: Self.width(for: field, webView: webView), pageHost: field.host))
         view.safeAreaRegions = []
         // Inside the web view itself: a sibling over the window's content view took the clicks but
         // was drawn under the page, where WebKit's compositing layers sit. A layer order only
@@ -132,15 +132,15 @@ final class PasswordAutofillManager {
     private func refresh() {
         guard let current = prompt, let webView = current.webView, webView.window != nil else { return }
         let width = Self.width(for: current.field, webView: webView)
-        current.view.rootView = dropdown(logins: current.logins, keyboardIndex: current.keyboardIndex, width: width)
+        current.view.rootView = dropdown(logins: current.logins, keyboardIndex: current.keyboardIndex, width: width, pageHost: current.field.host)
         let size = current.view.fittingSize
         current.view.frame = Self.frame(of: current.field, in: webView, size: size)
         AutofillBridge.setState(open: true, highlighted: current.keyboardIndex != nil, in: webView)
     }
 
-    private func dropdown(logins: [SavedLogin], keyboardIndex: Int?, width: CGFloat) -> AutofillDropdownView {
+    private func dropdown(logins: [SavedLogin], keyboardIndex: Int?, width: CGFloat, pageHost: String) -> AutofillDropdownView {
         AutofillDropdownView(
-            logins: logins, keyboardIndex: keyboardIndex, width: width,
+            logins: logins, keyboardIndex: keyboardIndex, width: width, pageHost: pageHost,
             onPick: { [weak self] login in self?.pick(login) },
             onManage: { [weak self] in
                 self?.dismiss()
@@ -192,14 +192,9 @@ final class PasswordAutofillManager {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    /// The most rows the list shows: more than that is a page for Manage Passwords, and typing narrows it.
-    private static let maxRows = 5
-
     private static func narrowed(_ logins: [SavedLogin], by typed: String?) -> [SavedLogin] {
-        guard let typed = typed?.trimmingCharacters(in: .whitespaces).lowercased(), !typed.isEmpty else {
-            return Array(logins.prefix(maxRows))
-        }
-        return Array(logins.filter { $0.username.lowercased().hasPrefix(typed) }.prefix(maxRows))
+        guard let typed = typed?.trimmingCharacters(in: .whitespaces).lowercased(), !typed.isEmpty else { return logins }
+        return logins.filter { $0.username.lowercased().hasPrefix(typed) }
     }
 }
 
