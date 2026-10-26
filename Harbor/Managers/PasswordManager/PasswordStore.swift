@@ -88,7 +88,7 @@ actor PasswordStore {
     /// space: an import ties each browser profile's logins to one space, and on any other space
     /// the list was simply empty, which read as the feature not working.
     func logins(forHost host: String, space: UUID?) -> [SavedLogin] {
-        all()
+        let ordered = all()
             .filter { LoginMatching.matches(loginHost: $0.host, pageHost: host) }
             .sorted { lhs, rhs in
                 let exact = (LoginMatching.isExact(loginHost: lhs.host, pageHost: host), LoginMatching.isExact(loginHost: rhs.host, pageHost: host))
@@ -97,6 +97,9 @@ actor PasswordStore {
                 if here.0 != here.1 { return here.0 }
                 return lhs.created > rhs.created
             }
+        // The same account imported from two profiles is one row; the first by the order above stays.
+        var seen = Set<String>()
+        return ordered.filter { seen.insert($0.host.lowercased() + "\n" + $0.username.lowercased()).inserted }
     }
 
     func hasLogins(forHost host: String, space: UUID?) -> Bool {

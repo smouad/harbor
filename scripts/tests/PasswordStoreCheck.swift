@@ -60,6 +60,16 @@ struct PasswordStoreCheck {
         let gone = await store.password(for: login)
         precondition(gone == nil, "deleted")
         await store.deleteAll()
+
+        // One account imported from two profiles shows once; another customer of a hosting platform never shows.
+        await store.save([
+            NewLogin(url: "https://eva-erp-dev.vercel.app", username: "atc@eva.es", password: "a", spaceID: work),
+            NewLogin(url: "https://eva-erp-dev.vercel.app", username: "ATC@eva.es", password: "b", spaceID: personal),
+            NewLogin(url: "https://other-app.vercel.app", username: "someone", password: "c", spaceID: work),
+        ])
+        let platform = await store.logins(forHost: "eva-erp-dev.vercel.app", space: work)
+        precondition(platform.count == 1 && platform[0].username == "atc@eva.es", "got \(platform.map(\.username))")
+        await store.deleteAll()
         let left = await PasswordStore(service: await store.serviceName).all()
         precondition(left.isEmpty, "cleaned up")
         precondition(PasswordStore.host(of: "example.com") == "example.com", "a bare host counts")

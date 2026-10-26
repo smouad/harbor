@@ -10,7 +10,7 @@
 import Foundation
 
 enum LoginMatching {
-    /// Second-level suffixes where the site is the label before them, not the last two labels:
+    /// Suffixes where the site is the label before them, not the last two labels:
     /// `shop.example.co.uk` belongs to `example.co.uk`, and `co.uk` is no one's site.
     private static let compoundSuffixes: Set<String> = [
         "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk",
@@ -19,6 +19,14 @@ enum LoginMatching {
         "com.br", "com.ar", "com.mx", "com.co", "com.pe", "com.ve", "com.ec", "com.uy", "com.cl",
         "com.tr", "com.sg", "com.hk", "com.tw", "com.cn", "com.my", "com.ph", "com.pk", "com.vn",
         "com.eg", "com.sa", "com.ng", "com.ua", "com.pt", "com.es", "org.es", "gob.es", "nom.es",
+        // Hosting platforms that give every customer a subdomain: `a.vercel.app` and `b.vercel.app`
+        // are two unrelated sites, and a login for one must never be offered on the other.
+        "vercel.app", "now.sh", "netlify.app", "github.io", "gitlab.io", "pages.dev", "workers.dev",
+        "herokuapp.com", "web.app", "firebaseapp.com", "onrender.com", "fly.dev", "railway.app",
+        "azurewebsites.net", "azurestaticapps.net", "blogspot.com", "appspot.com", "cloudfront.net",
+        "amplifyapp.com", "ngrok.io", "ngrok-free.app", "repl.co", "replit.app", "glitch.me", "surge.sh",
+        "myshopify.com", "webflow.io", "bubbleapps.io", "carrd.co", "lovable.app", "streamlit.app",
+        "hf.space", "trycloudflare.com", "ts.net", "duckdns.org", "csb.app", "stackblitz.io", "framer.app",
     ]
 
     /// The part of a host a site owns: `login.example.com` and `www.example.com` are both

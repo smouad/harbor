@@ -183,11 +183,26 @@ public final class AutofillBridge: NSObject, WKScriptMessageHandler {
             post({ type: 'key', key });
         }, true);
 
-        // Anything that moves the field or the person's attention closes the list.
+        // A click elsewhere closes the list. Scrolling or resizing keeps it under its field, which
+        // is told to the app again at the next frame; it closes only once the field has left the view.
         const close = () => { if (state.open) { state.open = false; post({ type: 'close' }); } };
         document.addEventListener('pointerdown', (event) => { if (event.isTrusted && event.target !== state.target) { close(); } }, true);
-        window.addEventListener('scroll', close, { capture: true, passive: true });
-        window.addEventListener('resize', close);
+        let moving = false;
+        const follow = () => {
+            if (!state.open || moving) { return; }
+            moving = true;
+            requestAnimationFrame(() => {
+                moving = false;
+                const el = state.target;
+                if (!state.open || !el || !el.isConnected) { return close(); }
+                const box = el.getBoundingClientRect();
+                if (box.bottom < 0 || box.top > window.innerHeight || box.right < 0 || box.left > window.innerWidth) { return close(); }
+                const kind = kindOf(el);
+                if (kind) { post(describe(el, kind, 'input')); }
+            });
+        };
+        window.addEventListener('scroll', follow, { capture: true, passive: true });
+        window.addEventListener('resize', follow);
 
         const setNative = (el, value) => {
             const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;

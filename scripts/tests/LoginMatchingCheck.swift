@@ -22,6 +22,12 @@ struct LoginMatchingCheck {
         // Two unrelated sites under one compound suffix stay apart.
         precondition(!LoginMatching.matches(loginHost: "a.co.uk", pageHost: "b.co.uk"))
 
+        // A hosting platform's customers are separate sites.
+        precondition(LoginMatching.site(of: "eva-erp-dev.vercel.app") == "eva-erp-dev.vercel.app")
+        precondition(!LoginMatching.matches(loginHost: "other-app.vercel.app", pageHost: "eva-erp-dev.vercel.app"))
+        precondition(!LoginMatching.matches(loginHost: "me.github.io", pageHost: "you.github.io"))
+        precondition(LoginMatching.matches(loginHost: "eva-erp-dev.vercel.app", pageHost: "eva-erp-dev.vercel.app"))
+
         precondition(LoginMatching.isExact(loginHost: "Example.com", pageHost: "example.com"))
         precondition(!LoginMatching.isExact(loginHost: "www.example.com", pageHost: "example.com"))
 

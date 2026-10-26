@@ -192,9 +192,14 @@ final class PasswordAutofillManager {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
+    /// The most rows the list shows: more than that is a page for Manage Passwords, and typing narrows it.
+    private static let maxRows = 5
+
     private static func narrowed(_ logins: [SavedLogin], by typed: String?) -> [SavedLogin] {
-        guard let typed = typed?.trimmingCharacters(in: .whitespaces).lowercased(), !typed.isEmpty else { return logins }
-        return logins.filter { $0.username.lowercased().hasPrefix(typed) }
+        guard let typed = typed?.trimmingCharacters(in: .whitespaces).lowercased(), !typed.isEmpty else {
+            return Array(logins.prefix(maxRows))
+        }
+        return Array(logins.filter { $0.username.lowercased().hasPrefix(typed) }.prefix(maxRows))
     }
 }
 
