@@ -1,14 +1,17 @@
 #!/bin/bash
 # Builds Release, signs it, packages it for Sparkle and publishes it as a GitHub Release.
 #
-#   scripts/release.sh <version> [--notes <file>] [--dry-run]
+#   scripts/release.sh <version> [--notes <file>] [--dry-run] [--replace]
 #
 # Harbor checks https://github.com/smouad/harbor/releases/latest/download/appcast.xml (SUFeedURL in
 # Harbor/Info.plist), so publishing a release is what makes the sidebar offer the update. The build
 # number is a timestamp, which only grows, because Sparkle orders updates by it. The version is what
 # people see. --dry-run does everything but the upload and leaves the files in build-release/dist.
 # The release carries the Sparkle zip, appcast.xml and a Harbor-<version>.dmg for the landing page,
-# which scripts/deploy-site.sh then refreshes from the new release.
+# which scripts/deploy-site.sh then refreshes from the new release. --replace publishes over a version
+# that already exists, keeping its number: the old release and tag are deleted only after the new
+# build is made and signed, just before the new one is created. The build number still grows, so
+# Sparkle offers the new build to copies running the old one.
 #
 # Updates are signed with the EdDSA key that generate_keys put in the login keychain; the matching
 # public key is SUPublicEDKey in Info.plist. Back the private key up with `generate_keys -x <file>`:
@@ -18,17 +21,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage() { echo "usage: scripts/release.sh <version> [--notes <file>] [--dry-run]" >&2; exit 2; }
+usage() { echo "usage: scripts/release.sh <version> [--notes <file>] [--dry-run] [--replace]" >&2; exit 2; }
 
 version=${1:-}
 [ -n "$version" ] || usage
 shift
 notes=""
 dry_run=0
+replace=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --notes) notes=${2:-}; [ -f "$notes" ] || usage; shift 2 ;;
         --dry-run) dry_run=1; shift ;;
+        --replace) replace=1; shift ;;
         *) usage ;;
     esac
 done
@@ -48,7 +53,8 @@ if [ "$dry_run" = 0 ]; then
     [ "$(gh repo view "$repo" --json visibility --jq .visibility)" = PUBLIC ] \
         || { echo "$repo must be public for Sparkle to download from it" >&2; exit 1; }
     if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-        echo "Release $tag already exists" >&2; exit 1
+        [ "$replace" = 1 ] || { echo "Release $tag already exists (use --replace to publish over it)" >&2; exit 1; }
+        echo "Will replace the published $tag once the new build is ready."
     fi
 fi
 
@@ -112,6 +118,10 @@ if [ "$dry_run" = 1 ]; then
 fi
 
 [ -z "$(git status --porcelain --untracked-files=no)" ] || echo "Warning: uncommitted changes are in this build; the tag marks HEAD without them" >&2
+if [ "$replace" = 1 ]; then
+    gh release delete "$tag" --repo "$repo" --yes --cleanup-tag 2>/dev/null || true
+    git tag -d "$tag" 2>/dev/null || true
+fi
 git tag -a "$tag" -m "Harbor $version"
 git push origin "$tag"
 notes_flag=(--generate-notes)
